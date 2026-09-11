@@ -1,0 +1,18 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY shared ./shared
+COPY calls_worker ./calls_worker
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN useradd --create-home appuser
+USER appuser
+
+EXPOSE 8081
+CMD ["python", "-m", "calls_worker.main"]

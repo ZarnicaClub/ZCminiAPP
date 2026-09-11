@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ЗарницаКлаб — CRM</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="app">
+
+  <!-- Стартовый экран -->
+  <section id="screen-start" class="screen screen-start">
+    <header class="start-header">
+      <div class="brand">ЗАРНИЦАКЛАБ</div>
+      <h1 class="start-title">CRM</h1>
+      <div class="start-sub">mini app</div>
+    </header>
+    <div class="start-grid">
+      <button class="start-btn" data-go="schedule"><span class="start-ico">📅</span><span>Расписание</span></button>
+      <button class="start-btn" data-go="clients"><span class="start-ico">👥</span><span>Клиенты</span></button>
+      <button class="start-btn" data-go="orders"><span class="start-ico">📋</span><span>Заказы</span></button>
+      <button class="start-btn" data-go="calls"><span class="start-ico">📞</span><span>Звонки</span></button>
+      <button class="start-btn start-btn-wide" data-go="bso"><span class="start-ico">🧾</span><span>БСО</span></button>
+    </div>
+  </section>
+
+  <!-- Экран «Расписание» -->
+  <section id="screen-schedule" class="screen" hidden>
+    <header class="screen-header">
+      <div class="header-row">
+        <div>
+          <div class="brand">ЗАРНИЦАКЛАБ</div>
+          <h1>Расписание</h1>
+        </div>
+        <div class="weekend">
+          <div class="weekend-label">Ожидаем в выходные</div>
+          <div class="weekend-value">👥 <span id="weekendCount">—</span></div>
+        </div>
+      </div>
+    </header>
+
+    <div class="period-row">
+      <div class="month-nav">
+        <button class="month-arrow" id="prevMonth" aria-label="Предыдущий месяц">‹</button>
+        <button class="month-label" id="monthLabel">—</button>
+        <button class="month-arrow" id="nextMonth" aria-label="Следующий месяц">›</button>
+      </div>
+      <button class="icon-btn" id="filterBtn" title="Фильтры">☷</button>
+      <button class="cta-btn" id="newRecordBtn">＋ Новая запись</button>
+    </div>
+
+    <div class="week" id="weekStrip"></div>
+
+    <div class="day-info" id="dayInfo"></div>
+
+    <div class="day-switch" id="daySwitch">
+      <button class="day-seg active" data-period="morning"><span class="day-seg-ico">☀</span>Утро<small>09:00–14:45</small></button>
+      <button class="day-seg" data-period="evening"><span class="day-seg-ico">☾</span>Вечер<small>15:15–21:00</small></button>
+    </div>
+
+    <section id="scheduleList" class="schedule-list"></section>
+  </section>
+
+  <!-- Экран «Клиенты» -->
+  <section id="screen-clients" class="screen" hidden>
+    <header class="screen-header">
+      <div class="brand">ЗАРНИЦАКЛАБ</div>
+      <h1>Клиенты</h1>
+    </header>
+    <div id="clientsSummary" class="summary">Загрузка…</div>
+    <section id="clientsList" class="orders"></section>
+  </section>
+
+  <!-- Экран «Заказы» -->
+  <section id="screen-orders" class="screen" hidden>
+    <header class="screen-header">
+      <div class="brand">ЗАРНИЦАКЛАБ</div>
+      <h1>Заказы</h1>
+    </header>
+    <div class="filter-row" id="ordersFilterRow">
+      <button class="chip active" data-ofilter="upcoming">Ближайшие</button>
+      <button class="chip" data-ofilter="all">Все</button>
+      <button class="chip" data-ofilter="date">Выбор даты</button>
+    </div>
+    <div id="ordersDateStrip" class="day-strip-wrap" hidden></div>
+    <div id="ordersSummary" class="summary">Загрузка…</div>
+    <section id="ordersList" class="orders"></section>
+  </section>
+
+  <!-- Экран «Звонки» -->
+  <section id="screen-calls" class="screen" hidden>
+    <header class="screen-header">
+      <div class="brand">ЗАРНИЦАКЛАБ</div>
+      <h1>Звонки</h1>
+    </header>
+    <div id="callsDateStrip" class="day-strip-wrap"></div>
+    <div id="callsSummary" class="summary">Загрузка…</div>
+    <section id="callsTodayList" class="orders"></section>
+  </section>
+
+  <!-- Экран «БСО» -->
+  <section id="screen-bso" class="screen" hidden>
+    <header class="screen-header">
+      <div class="brand">ЗАРНИЦАКЛАБ</div>
+      <h1>БСО</h1>
+    </header>
+    <div class="filter-row" id="bsoFilterRow">
+      <button class="chip active" data-bsofilter="all">Все</button>
+      <button class="chip" data-bsofilter="date">Выбор даты</button>
+    </div>
+    <div id="bsoDateStrip" class="day-strip-wrap" hidden></div>
+    <div id="bsoSummary" class="summary">Загрузка…</div>
+    <section id="bsoList" class="orders"></section>
+  </section>
+
+  <!-- Нижняя навигация (появляется на внутренних экранах) -->
+  <nav class="bottom-nav" id="bottomNav" hidden>
+    <button class="nav-item" data-go="schedule"><span class="nav-ico">📅</span><span>Расписание</span></button>
+    <button class="nav-item" data-go="orders"><span class="nav-ico">📋</span><span>Заказы</span></button>
+    <button class="nav-item" data-go="calls"><span class="nav-ico">📞</span><span>Звонки</span></button>
+    <button class="nav-item" id="navMore" type="button"><span class="nav-ico">•••</span><span>ЕЩЕ</span></button>
+  </nav>
+
+  <div class="more-menu" id="moreMenu" hidden>
+    <button class="more-item" data-go="clients"><span class="more-ico">👥</span><span>Клиенты</span></button>
+    <button class="more-item" data-go="bso"><span class="more-ico">🧾</span><span>БСО</span></button>
+  </div>
+
+</main>
+
+<dialog id="orderDialog">
+  <div class="dialog-body">
+    <button class="close" id="closeDialog">×</button>
+    <div id="detail"></div>
+  </div>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

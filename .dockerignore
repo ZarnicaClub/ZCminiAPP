@@ -1,0 +1,20 @@
+# Python: bytecode и кэши (не копировать в образ)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+
+# Секреты и локальные env-файлы
+.env
+.env.*
+*.env
+*.env.*
+
+# Бэкапы и временные файлы
+_backup_*
+*.bak
+*~

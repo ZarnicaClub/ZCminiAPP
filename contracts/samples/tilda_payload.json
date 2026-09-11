@@ -1,0 +1,29 @@
+﻿{
+    "qty":  "18",
+    "date":  "15.08.2026",
+    "game":  "Пейнтбол Стандарт Плюс",
+    "name":  "Галина",
+    "tent":  "Беседка до 20 человек",
+    "email":  "gala.zobnina2016@yandex.ru",
+    "phone":  "89027250497",
+    "formid":  "form123064920",
+    "payment":  {
+                    "sys":  "tinkoff",
+                    "amount":  "5000",
+                    "orderid":  "1221926939",
+                    "products":  [
+                                     {
+                                         "name":  "Игра в клубе ЗарницаКлаб",
+                                         "price":  "5000",
+                                         "amount":  5000,
+                                         "quantity":  1
+                                     }
+                                 ],
+                    "systranid":  "8893613207"
+                },
+    "referer":  "https://xn--80aaae0ahpio3a2e.xn--p1ai/",
+    "Checkbox":  "yes",
+    "formname":  "Cart",
+    "Checkbox_2":  "yes",
+    "Выберите_сеанс":  "- Вечерний с 15:15 до 21:00;"
+}

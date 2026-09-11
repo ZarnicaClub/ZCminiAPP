@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<title>Ваше бронирование подтверждено</title>
+</head>
+<body style="margin:0;padding:0;background:#f4eeba;color:#20231d;font-family:Arial,Helvetica,sans-serif;">
+<!--
+EMAIL TEMPLATE: replace {{...}} variables before sending.
+For SMTP sending, attach assets/hero.png with Content-ID: <zarnica-hero>
+Then the hero image is referenced as cid:zarnica-hero.
+-->
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f4eeba;">
+<tr><td align="center" style="padding:24px 10px;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" align="center" style="width:100%;max-width:900px;background:#f4eeba;">
+
+<tr><td style="padding:0;border-radius:22px 22px 0 0;overflow:hidden;">
+<img src="cid:zarnica-hero" width="100%" alt="ЗарницаКлаб — бронирование подтверждено" style="display:block;width:100%;height:auto;border:0;">
+</td></tr>
+
+<tr><td style="padding:28px 34px 8px;">
+<div style="font-size:27px;line-height:1.15;font-weight:800;color:#3e4929;">Здравствуйте, {{name}}!</div>
+<div style="font-size:16px;line-height:1.55;color:#4e5249;padding-top:10px;"><br>Спасибо что выбрали ЗарницаКлаб. Ваша заявка получена, бронь оплачена, ждем Вас.</div>
+</td></tr>
+
+<tr><td style="padding:16px 24px 0;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#ffffff;border:1px solid #e5e4dc;border-radius:18px;">
+<tr>
+<td width="180" valign="top" style="padding:24px 18px;text-align:center;border-right:1px solid #dedfd5;">
+<div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#777b6b;text-transform:uppercase;">Дата мероприятия</div>
+<div style="font-size:86px;line-height:.95;font-weight:800;color:#73882D;padding-top:8px;">{{day}}</div>
+<div style="font-size:18px;font-weight:800;color:#20231d;">{{month}}</div>
+<div style="font-size:14px;color:#777b6b;">{{year}}</div>
+</td>
+<td valign="top" style="padding:22px 20px;">
+<div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#777b6b;text-transform:uppercase;">Количество участников</div>
+<div style="font-size:16px;font-weight:700;padding:5px 0 16px;">{{qty}} человек</div>
+<div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#777b6b;text-transform:uppercase;">Сеанс</div>
+<div style="font-size:16px;font-weight:700;padding:5px 0 16px;">{{session}}</div>
+<div style="font-size:10px;font-weight:700;letter-spacing:1.2px;color:#777b6b;text-transform:uppercase;">Тариф</div>
+<div style="font-size:16px;font-weight:700;padding-top:5px;">{{game}}</div>
+</td></tr></table>
+</td></tr>
+
+<tr><td style="padding:20px 24px 0;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+<tr>
+<td width="50%" valign="top" style="padding-right:8px;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#ffffff;border:1px solid #e5e4dc;border-radius:18px;">
+<tr><td style="padding:22px;">
+<div style="font-size:16px;font-weight:800;letter-spacing:.5px;color:#46512f;text-transform:uppercase;padding-bottom:16px;">Ваша игра</div>
+<div style="font-size:13px;color:#777b6b;padding:7px 0;border-bottom:1px solid #e6e6df;">Формат <span style="float:right;color:#20231d;">{{format}}</span></div>
+<div style="font-size:13px;color:#777b6b;padding:7px 0;border-bottom:1px solid #e6e6df;">Тариф <span style="float:right;color:#20231d;">{{game}}</span></div>
+<div style="font-size:13px;color:#777b6b;padding:7px 0;">Размещение <span style="float:right;color:#20231d;max-width:55%;text-align:right;">{{tent}}</span></div>
+</td></tr></table>
+</td>
+<td width="50%" valign="top" style="padding-left:8px;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#ffffff;border:1px solid #e5e4dc;border-radius:18px;">
+<tr><td style="padding:22px;">
+<div style="font-size:16px;font-weight:800;letter-spacing:.5px;color:#46512f;text-transform:uppercase;padding-bottom:16px;">Ваш заказ</div>
+<div style="font-size:14px;line-height:1.45;">Игра в клубе ЗарницаКлаб<br><strong>{{order_item_qty}} × {{order_item_price}} ₽</strong></div>
+<div style="border-top:1px solid #e1e2d9;margin-top:14px;padding-top:14px;font-size:13px;color:#46512f;">Внесено</div>
+<div style="font-size:26px;font-weight:800;padding-top:2px;">{{payment_amount}} ₽</div>
+<div style="display:inline-block;background:#46512f;color:#fff;border-radius:20px;padding:8px 13px;font-size:11px;font-weight:800;letter-spacing:.7px;margin-top:9px;">✓ ОПЛАЧЕНО</div>
+</td></tr></table>
+</td></tr></table>
+</td></tr>
+
+<tr><td style="padding:20px 24px 0;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#ffffff;border:1px solid #e5e4dc;border-radius:18px;">
+<tr><td style="padding:24px;">
+<div style="font-size:17px;font-weight:800;letter-spacing:.5px;color:#46512f;text-transform:uppercase;padding-bottom:18px;">Что нужно сделать в день мероприятия</div>
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+<tr>
+<td width="25%" valign="top" style="padding-right:12px;"><div style="font-size:12px;font-weight:800;color:#4c572f;background:#dfe1d0;border-radius:50%;width:32px;height:32px;line-height:32px;text-align:center;">01</div><div style="font-size:12px;font-weight:800;padding-top:9px;">ПРИЕЗЖАЙТЕ ЗАРАНЕЕ</div><div style="font-size:12px;line-height:1.45;color:#62665c;padding-top:5px;">К началу вашего сеанса.</div></td>
+<td width="25%" valign="top" style="padding:0 8px;border-left:1px solid #e1e2d9;"><div style="font-size:12px;font-weight:800;color:#4c572f;background:#dfe1d0;border-radius:50%;width:32px;height:32px;line-height:32px;text-align:center;">02</div><div style="font-size:12px;font-weight:800;padding-top:9px;">ОДЕЖДА И ОБУВЬ</div><div style="font-size:12px;line-height:1.45;color:#62665c;padding-top:5px;">Удобная спортивная одежда и обувь.</div></td>
+<td width="25%" valign="top" style="padding:0 8px;border-left:1px solid #e1e2d9;"><div style="font-size:12px;font-weight:800;color:#4c572f;background:#dfe1d0;border-radius:50%;width:32px;height:32px;line-height:32px;text-align:center;">03</div><div style="font-size:12px;font-weight:800;padding-top:9px;">РЕГИСТРАЦИЯ</div><div style="font-size:12px;line-height:1.45;color:#62665c;padding-top:5px;">Регистрация и инструктаж перед игрой.</div></td>
+<td width="25%" valign="top" style="padding-left:12px;border-left:1px solid #e1e2d9;"><div style="font-size:12px;font-weight:800;color:#4c572f;background:#dfe1d0;border-radius:50%;width:32px;height:32px;line-height:32px;text-align:center;">04</div><div style="font-size:12px;font-weight:800;padding-top:9px;">СВЯЖИТЕСЬ С НАМИ</div><div style="font-size:12px;line-height:1.45;color:#62665c;padding-top:5px;">Если изменится количество участников.</div></td>
+</tr></table>
+</td></tr></table>
+</td></tr>
+
+<tr><td style="padding:20px 24px 0;">
+<a href="{{map_url}}" style="display:block;text-align:center;background:#4f5a31;color:#fff;text-decoration:none;border-radius:28px;padding:16px;font-size:13px;font-weight:800;letter-spacing:.7px;">V &nbsp; ПОСТРОИТЬ МАРШРУТ В ЯНДЕКС.КАРТАХ</a>
+</td></tr>
+
+<tr><td style="padding:22px 24px;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#e8e8dd;border-radius:18px;">
+<tr><td style="padding:24px;">
+<div style="font-size:19px;font-weight:800;color:#46512f;">ЗарницаКлаб</div>
+<div style="font-size:10px;letter-spacing:1.4px;color:#777b6b;padding-top:3px;">ПЕЙНТБОЛЬНЫЙ КЛУБ ОСНОВАН В 2012г.</div>
+<div style="font-size:13px;line-height:1.6;color:#4f5449;padding-top:15px;">Телефон: {{club_phone}}<br>Telegram / WhatsApp: {{club_messenger}}<br>Сайт: {{club_site}}<br>Адрес: {{club_address}}</div>
+<div style="font-size:17px;font-style:italic;color:#56613b;padding-top:18px;">До встречи в ЗарницаКлаб!</div>
+</td></tr></table>
+</td></tr>
+
+<tr><td style="padding:0 28px 26px;color:#777b6b;font-size:11px;line-height:1.5;">
+Заказ #{{order_id}} &nbsp; • &nbsp; Payment ID: {{payment_id}}<br>
+© ЗарницаКлаб, {{year}}
+</td></tr>
+
+</table>
+</td></tr></table>
+</body></html>

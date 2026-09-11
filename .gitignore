@@ -1,0 +1,31 @@
+# Secrets / environment
+.env
+.env.*
+!.env.example
+
+# Production data dumps (PII) вЂ” never commit
+data/
+backup/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+packages/
+*.egg-info/
+
+# Runtime artifacts
+reports/
+*.log
+.tmp/
+.packages/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# временные фикстуры тестов
+tests/_fixtures_tmp/
