@@ -2,19 +2,19 @@
 #
 # Как работает:
 #   1. при пуше в main (или вручную) GitHub собирает образ из корневого Dockerfile;
-#   2. загружает его в хранилище образов этого репозитория (ghcr.io) и делает пакет
-#      открытым для чтения: App Platform умеет забирать только открытые образы —
-#      авторизацию в закрытые хранилища платформа не поддерживает. Секретов в образе
-#      нет (пароли и ключи живут в переменных приложения), поэтому открытый пакет безопасен;
-#   3. если задан секрет TIMEWEB_API_TOKEN, дёргает Timeweb: «запусти деплой приложения»,
-#      и Timeweb подтягивает свежий образ.
+#   2. загружает его в хранилище образов (ghcr.io) и пытается сделать пакет открытым:
+#      App Platform забирает только открытые образы — авторизацию в закрытые
+#      хранилища платформа не поддерживает. Секретов в образе нет (пароли и ключи
+#      живут в переменных приложения), поэтому открытый пакет безопасен;
+#   3. если заданы секреты TIMEWEB_API_TOKEN и TIMEWEB_APP_ID — дёргает Timeweb:
+#      «запусти деплой приложения», и оно подтягивает свежий образ.
 #
 # Приложение в Timeweb работает в режиме «готовый образ» (custom-image): платформа
 # НЕ собирает код сама — только запускает образ. Это принципиально: при сборке
 # из репозитория платформа теряла ~20–50% входящих соединений (проверено 22.09.2026).
 #
-# Что нужно задать в настройках репозитория (Settings → Secrets and variables → Actions):
-#   TIMEWEB_API_TOKEN — токен Timeweb Cloud (для команды деплоя)
+# Настройки репозитория (Settings → Secrets and variables → Actions):
+#   TIMEWEB_API_TOKEN — токен Timeweb Cloud
 #   TIMEWEB_APP_ID    — идентификатор приложения в App Platform
 name: build-and-deploy
 
@@ -57,13 +57,29 @@ jobs:
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
 
-      - name: Сообщить Timeweb о новой версии
-        if: ${{ secrets.TIMEWEB_API_TOKEN != '' && secrets.TIMEWEB_APP_ID != '' }}
+      - name: Открыть образ для чтения
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
         run: |
-          curl -sS -X POST "https://api.timeweb.cloud/api/v1/apps/${TIMEWEB_APP_ID}/deploy" \
-            -H "Authorization: Bearer ${TIMEWEB_API_TOKEN}" \
+          curl -sS -X PATCH "https://api.github.com/orgs/${OWNER}/packages/container/zc-app" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
             -H "Content-Type: application/json" \
-            -d '{}' || true
+            -d '{"visibility":"public"}'
+
+      - name: Сообщить Timeweb о новой версии
+        continue-on-error: true
         env:
           TIMEWEB_API_TOKEN: ${{ secrets.TIMEWEB_API_TOKEN }}
           TIMEWEB_APP_ID: ${{ secrets.TIMEWEB_APP_ID }}
+        run: |
+          if [ -z "${TIMEWEB_API_TOKEN}" ] || [ -z "${TIMEWEB_APP_ID}" ]; then
+            echo "Секреты Timeweb не заданы — шаг пропущен."
+            exit 0
+          fi
+          curl -sS -X POST "https://api.timeweb.cloud/api/v1/apps/${TIMEWEB_APP_ID}/deploy" \
+            -H "Authorization: Bearer ${TIMEWEB_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{}'
