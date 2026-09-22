@@ -1,0 +1,69 @@
+# Автосборка образа приложения и его доставка в Timeweb App Platform.
+#
+# Как работает:
+#   1. при пуше в main (или вручную) GitHub собирает образ из корневого Dockerfile;
+#   2. загружает его в хранилище образов этого репозитория (ghcr.io) и делает пакет
+#      открытым для чтения: App Platform умеет забирать только открытые образы —
+#      авторизацию в закрытые хранилища платформа не поддерживает. Секретов в образе
+#      нет (пароли и ключи живут в переменных приложения), поэтому открытый пакет безопасен;
+#   3. если задан секрет TIMEWEB_API_TOKEN, дёргает Timeweb: «запусти деплой приложения»,
+#      и Timeweb подтягивает свежий образ.
+#
+# Приложение в Timeweb работает в режиме «готовый образ» (custom-image): платформа
+# НЕ собирает код сама — только запускает образ. Это принципиально: при сборке
+# из репозитория платформа теряла ~20–50% входящих соединений (проверено 22.09.2026).
+#
+# Что нужно задать в настройках репозитория (Settings → Secrets and variables → Actions):
+#   TIMEWEB_API_TOKEN — токен Timeweb Cloud (для команды деплоя)
+#   TIMEWEB_APP_ID    — идентификатор приложения в App Platform
+name: build-and-deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/zc-app
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Забрать код
+        uses: actions/checkout@v4
+
+      - name: Включить сборку расширенных образов
+        uses: docker/setup-buildx-action@v3
+
+      - name: Войти в хранилище образов GitHub
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Собрать и загрузить образ
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+
+      - name: Сообщить Timeweb о новой версии
+        if: ${{ secrets.TIMEWEB_API_TOKEN != '' && secrets.TIMEWEB_APP_ID != '' }}
+        run: |
+          curl -sS -X POST "https://api.timeweb.cloud/api/v1/apps/${TIMEWEB_APP_ID}/deploy" \
+            -H "Authorization: Bearer ${TIMEWEB_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{}' || true
+        env:
+          TIMEWEB_API_TOKEN: ${{ secrets.TIMEWEB_API_TOKEN }}
+          TIMEWEB_APP_ID: ${{ secrets.TIMEWEB_APP_ID }}
