@@ -6,12 +6,16 @@
 Правила безопасности:
 - feature-флаг: если SMTP_HOST не задан — ничего не отправляем (только лог);
 - рендер и отправка вынесены сюда, БД здесь не трогаем (идемпотентность — в caller);
-- ошибка SMTP бросается наружу, чтобы caller зафиксировал её в логе статусов.
+- ошибка SMTP бросается наружу, чтобы caller зафиксировал её в логе статусов;
+- подключение только по IPv4 и короткий таймаут SMTP_TIMEOUT: в контейнере часто
+  нет IPv6 (отсюда OSError [Errno 99] Cannot assign requested address), а письмо
+  не должно задерживать ответ вебхука Tilda.
 """
 import json
 import logging
 import os
 import smtplib
+import socket
 import ssl
 from datetime import datetime
 from email.header import Header
@@ -143,9 +147,112 @@ def smtp_enabled() -> bool:
     return bool(os.getenv("SMTP_HOST"))
 
 
+def _env_timeout() -> float:
+    """SMTP_TIMEOUT из окружения (сек)."""
+    try:
+        value = float(os.getenv("SMTP_TIMEOUT", "8"))
+    except (TypeError, ValueError):
+        log.warning("SMTP_TIMEOUT задан неверно — использую 8 с")
+        return 8.0
+    return value if value > 0 else 8.0
+
+
+# Таймаут соединения с SMTP (сек). Письмо — best-effort побочный эффект: ожидание
+# недоступного SMTP не должно держать воркер и тем более ответ вебхука Tilda.
+SMTP_TIMEOUT = _env_timeout()
+
+
+def _smtp_host_port() -> tuple[str, int]:
+    """Хост и порт SMTP из окружения (порт с защитой от мусора в переменной)."""
+    host = os.environ["SMTP_HOST"]
+    try:
+        port = int(os.environ.get("SMTP_PORT", "587"))
+    except (TypeError, ValueError):
+        log.warning("SMTP_PORT задан неверно — использую 587")
+        port = 587
+    return host, port
+
+
+def _connect_ipv4(host: str, port: int, timeout: float, source_address=None) -> "socket.socket":
+    """TCP-соединение с SMTP только по IPv4, с перебором всех адресов хоста.
+
+    В контейнере часто нет IPv6, а у хоста есть AAAA-запись: обычный connect
+    в этом случае падает с OSError [Errno 99] Cannot assign requested address
+    (наблюдалось в production 05–09.09.2026). Поэтому адреса перебираем сами,
+    только семейство AF_INET, и логируем, что именно не получилось.
+    """
+    try:
+        infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+    except OSError as exc:
+        log.error("SMTP: у %s нет IPv4-адреса: %s", host, exc)
+        raise
+    errors = []
+    for family, socktype, proto, _canon, sockaddr in infos:
+        sock = socket.socket(family, socktype, proto)
+        try:
+            sock.settimeout(timeout)
+            if source_address:
+                sock.bind(source_address)
+            sock.connect(sockaddr)
+            log.info("SMTP: подключение установлено %s:%s (%s)", host, port, sockaddr[0])
+            return sock
+        except OSError as exc:
+            errors.append("%s -> %s" % (sockaddr[0], exc))
+            sock.close()
+    log.error("SMTP: %s:%s недоступен (IPv4: %s): %s",
+              host, port, ", ".join(i[4][0] for i in infos), "; ".join(errors))
+    raise OSError("SMTP connect failed: " + "; ".join(errors))
+
+
+class _SMTPv4(smtplib.SMTP):
+    """SMTP (порт 587 + STARTTLS) с подключением только по IPv4."""
+
+    def _get_socket(self, host, port, timeout):
+        return _connect_ipv4(host, port, timeout or SMTP_TIMEOUT,
+                             getattr(self, "source_address", None))
+
+
+class _SMTPv4SSL(smtplib.SMTP_SSL):
+    """SMTP_SSL (порт 465) с подключением только по IPv4.
+
+    server_hostname берём из аргумента host — это исходное имя хоста, поэтому
+    SNI и проверка сертификата работают как обычно.
+    """
+
+    def _get_socket(self, host, port, timeout):
+        sock = _connect_ipv4(host, port, timeout or SMTP_TIMEOUT,
+                             getattr(self, "source_address", None))
+        return self.context.wrap_socket(sock, server_hostname=host)
+
+
+def log_smtp_config() -> None:
+    """Разовая диагностика SMTP в логе старта сервиса.
+
+    Показывает, куда и как сервис будет подключаться, и какие адреса отдаёт DNS.
+    Этого достаточно, чтобы отличить «в контейнере нет IPv6» / «порт закрыт
+    хостингом» от «неверный SMTP_HOST» без доступа внутрь контейнера.
+    """
+    if not smtp_enabled():
+        log.info("SMTP: выключен (SMTP_HOST не задан) — письма не отправляются")
+        return
+    try:
+        host, port = _smtp_host_port()
+        try:
+            ipv4 = sorted({i[4][0] for i in socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)})
+        except OSError as exc:
+            ipv4 = ["ошибка: %s" % exc]
+        try:
+            ipv6 = sorted({i[4][0] for i in socket.getaddrinfo(host, port, socket.AF_INET6, socket.SOCK_STREAM)})
+        except OSError:
+            ipv6 = []
+        log.info("SMTP: host=%s port=%s ssl=%s timeout=%ss ipv4=%s ipv6=%s",
+                 host, port, port == 465, SMTP_TIMEOUT, ipv4, ipv6 or "нет")
+    except Exception:  # noqa: BLE001 — диагностика не должна мешать старту сервиса
+        log.exception("SMTP: не удалось собрать диагностику окружения")
+
+
 def _smtp_send(to_email: str, subject: str, html: str) -> None:
-    smtp_host = os.environ["SMTP_HOST"]
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_host, smtp_port = _smtp_host_port()
     smtp_user = os.environ.get("SMTP_USER", "")
     smtp_password = os.environ.get("SMTP_PASSWORD", "")
     from_email = FROM_EMAIL or smtp_user
@@ -172,9 +279,9 @@ def _smtp_send(to_email: str, subject: str, html: str) -> None:
 
     context = ssl.create_default_context()
     if smtp_port == 465:
-        server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30, context=context)
+        server = _SMTPv4SSL(smtp_host, smtp_port, timeout=SMTP_TIMEOUT, context=context)
     else:
-        server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
+        server = _SMTPv4(smtp_host, smtp_port, timeout=SMTP_TIMEOUT)
     with server:
         if smtp_port != 465:
             server.starttls(context=context)

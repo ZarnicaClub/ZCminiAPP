@@ -2,6 +2,8 @@
 import json
 import logging
 
+from psycopg.errors import UndefinedColumn
+
 from shared.contracts import BsoIn, OrderIn
 from shared.db import pool
 from shared.mailer import is_paid, send_confirmation, smtp_enabled
@@ -9,46 +11,81 @@ from shared.mailer import is_paid, send_confirmation, smtp_enabled
 log = logging.getLogger("orders_webhook.service")
 
 
-def _confirmation_sent(order_id: str) -> bool:
-    """True, если подтверждение для заказа уже отправлено (orders.confirmation_sent_at)."""
-    with pool().connection() as conn:
-        row = conn.execute(
-            "SELECT 1 FROM orders WHERE order_id = %s AND confirmation_sent_at IS NOT NULL",
-            (order_id,),
-        ).fetchone()
+def _claim_confirmation(order_id: str) -> bool:
+    """Атомарно занимает отправку письма: True — отправляем мы.
+
+    Флаг — orders.confirmation_sent_at (миграция 0007). Занимаем его ДО отправки,
+    поэтому повторный webhook Tilda письмо не дублирует. Если колонки нет
+    (миграция не применена) — письмо всё равно отправляем: отсутствие флага не
+    должно молча выключать уведомления (так было в v12.15).
+    """
+    try:
+        with pool().connection() as conn:
+            row = conn.execute(
+                """
+                UPDATE orders SET confirmation_sent_at = now()
+                WHERE order_id = %s AND confirmation_sent_at IS NULL
+                RETURNING 1
+                """,
+                (order_id,),
+            ).fetchone()
+            conn.commit()
+    except UndefinedColumn:
+        log.warning(
+            "orders.confirmation_sent_at отсутствует (миграция 0007 не применена) — "
+            "идемпотентность писем отключена: order=%s", order_id,
+        )
+        return True
     return row is not None
 
 
-def _mark_confirmation_sent(order_id: str) -> None:
-    """Фиксирует факт отправки подтверждения (идемпотентно)."""
-    with pool().connection() as conn:
-        conn.execute(
-            "UPDATE orders SET confirmation_sent_at = now() WHERE order_id = %s",
-            (order_id,),
-        )
-        conn.commit()
+def _release_confirmation(order_id: str) -> None:
+    """Снимает флаг, если письмо отправить не удалось: даём шанс повторной попытке."""
+    try:
+        with pool().connection() as conn:
+            conn.execute(
+                "UPDATE orders SET confirmation_sent_at = NULL WHERE order_id = %s",
+                (order_id,),
+            )
+            conn.commit()
+    except Exception:  # noqa: BLE001 — уборка флага не должна ронять отправку
+        log.exception("не удалось снять флаг confirmation_sent_at: order=%s", order_id)
 
 
 def _maybe_send_confirmation(order: OrderIn) -> None:
     """Отправляет подтверждение брони клиенту (email уже есть в orders.customer_email).
 
-    1 письмо на заказ: повторный webhook Tilda не отправляет письмо повторно
-    (проверка orders.confirmation_sent_at). Никогда не бросает исключение:
-    письмо — best-effort побочный эффект, заказ к этому моменту уже сохранён.
+    Вызывается ПОСЛЕ ответа Tilda (background-задача, см. upsert_order): SMTP может
+    быть медленным или недоступным, и вебхук не должен его ждать — иначе Tilda
+    показывает «Произошла ошибка при отправке данных на Webhook URL».
+
+    1 письмо на заказ: флаг занимается атомарно до отправки, а при неудаче
+    снимается, чтобы следующая попытка Tilda могла отправить письмо.
+    Исключения наружу не пробрасывает: письмо — best-effort побочный эффект,
+    заказ к этому моменту уже сохранён.
     """
     try:
         if not is_paid(order) or not order.customer_email or not smtp_enabled():
             return
-        if _confirmation_sent(order.order_id):
+        if not _claim_confirmation(order.order_id):
+            log.info("confirmation already sent, skip: order=%s", order.order_id)
             return
-        send_confirmation(order)
-        _mark_confirmation_sent(order.order_id)
+        try:
+            send_confirmation(order)
+        except Exception:
+            _release_confirmation(order.order_id)
+            raise
     except Exception:  # noqa: BLE001
         log.exception("email notification error: order=%s", order.order_id)
 
 
-def upsert_order(order: OrderIn) -> None:
-    """Создаёт/линкует client по телефону и upsert заказа (без order_items)."""
+def upsert_order(order: OrderIn, background=None) -> None:
+    """Создаёт/линкует client по телефону и upsert заказа (без order_items).
+
+    background — FastAPI BackgroundTasks: письмо-подтверждение уходит ПОСЛЕ ответа
+    Tilda, поэтому недоступный SMTP больше не задерживает вебхук. Без background
+    (скрипты, тесты) письмо отправляется синхронно.
+    """
     with pool().connection() as conn:
         with conn.cursor() as cur:
             if order.customer_phone:
@@ -125,7 +162,10 @@ def upsert_order(order: OrderIn) -> None:
                 )
         conn.commit()
     log.info("order saved: %s", order.order_id)
-    _maybe_send_confirmation(order)
+    if background is not None:
+        background.add_task(_maybe_send_confirmation, order)
+    else:
+        _maybe_send_confirmation(order)
 
 
 def upsert_bso(bso: BsoIn) -> dict:

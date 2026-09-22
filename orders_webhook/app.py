@@ -3,16 +3,21 @@ import logging
 import os
 import uuid
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 
 from orders_webhook.service import upsert_bso, upsert_order
 from shared.gsheets import parse_gsheets_bso
 from shared.health import check_db, check_s3
 from shared.logging_config import set_trace_id, setup_logging
+from shared.mailer import log_smtp_config
 from shared.tilda import parse_tilda_order
 
 setup_logging()
 log = logging.getLogger("orders_webhook.app")
+
+# Разовая диагностика SMTP в логе старта сервиса: видно, куда и по каким адресам
+# (IPv4/IPv6) сервис будет подключаться, не заходя внутрь контейнера.
+log_smtp_config()
 
 app = FastAPI(title="orders-webhook", version="0.1.0")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
@@ -29,7 +34,7 @@ def healthz():
 
 
 @app.post("/webhook/tilda/{secret}")
-async def tilda_webhook(secret: str, request: Request):
+async def tilda_webhook(secret: str, request: Request, background: BackgroundTasks):
     set_trace_id(uuid.uuid4().hex)
 
     if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
@@ -53,7 +58,7 @@ async def tilda_webhook(secret: str, request: Request):
         return {"status": "skipped", "reason": "missing order_id"}
 
     try:
-        upsert_order(order)
+        upsert_order(order, background)
     except Exception:
         log.exception("failed to save order")
         raise HTTPException(status_code=500, detail="internal error")
