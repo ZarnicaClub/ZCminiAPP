@@ -2,20 +2,23 @@
 #
 # Как работает:
 #   1. при пуше в main (или вручную) GitHub собирает образ из корневого Dockerfile;
-#   2. загружает его в хранилище образов (ghcr.io) и пытается сделать пакет открытым:
-#      App Platform забирает только открытые образы — авторизацию в закрытые
-#      хранилища платформа не поддерживает. Секретов в образе нет (пароли и ключи
-#      живут в переменных приложения), поэтому открытый пакет безопасен;
+#   2. загружает его в Docker Hub (amkorobov/zc-web) — App Platform умеет забирать
+#      готовые образы только оттуда и только открытые. Секретов в образе нет
+#      (пароли и ключи живут в переменных приложения в панели), поэтому открытый
+#      образ безопасен;
 #   3. если заданы секреты TIMEWEB_API_TOKEN и TIMEWEB_APP_ID — дёргает Timeweb:
-#      «запусти деплой приложения», и оно подтягивает свежий образ.
+#      «запусти деплой приложения», и оно подтягивает свежую версию само.
 #
-# Приложение в Timeweb работает в режиме «готовый образ» (custom-image): платформа
-# НЕ собирает код сама — только запускает образ. Это принципиально: при сборке
-# из репозитория платформа теряла ~20–50% входящих соединений (проверено 22.09.2026).
+# Почему не сборка на стороне Timeweb: при сборке приложения из репозитория
+# платформа теряла 20–50% входящих соединений (проверено 22.09.2026: 16/20 и 24/30
+# против 30/30 на готовом образе). Поэтому приложение работает в режиме
+# «готовый образ» (custom-image) — Timeweb ничего не собирает, только запускает.
 #
-# Настройки репозитория (Settings → Secrets and variables → Actions):
-#   TIMEWEB_API_TOKEN — токен Timeweb Cloud
-#   TIMEWEB_APP_ID    — идентификатор приложения в App Platform
+# Секреты репозитория (Settings → Secrets and variables → Actions):
+#   DOCKERHUB_USERNAME — логин Docker Hub (amkorobov)
+#   DOCKERHUB_TOKEN    — токен Docker Hub с правом Read & Write
+#   TIMEWEB_API_TOKEN  — токен Timeweb Cloud            (необязательно)
+#   TIMEWEB_APP_ID     — id приложения в App Platform   (необязательно)
 name: build-and-deploy
 
 on:
@@ -25,12 +28,10 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 env:
-  # ВНИМАНИЕ: имена образов Docker только в нижнем регистре, поэтому здесь
-  # жёстко указано zarnicaclub (а не github.repository_owner = ZarnicaClub).
-  IMAGE: ghcr.io/zarnicaclub/zc-web
+  # Образ в Docker Hub. Имена — только в нижнем регистре.
+  IMAGE: amkorobov/zc-web
 
 jobs:
   build:
@@ -42,12 +43,11 @@ jobs:
       - name: Включить сборку расширенных образов
         uses: docker/setup-buildx-action@v3
 
-      - name: Войти в хранилище образов GitHub
+      - name: Войти в Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Собрать и загрузить образ
         uses: docker/build-push-action@v6
@@ -55,26 +55,14 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          # Собираем строго под одну платформу и без аттестаций: лишние записи
-          # в манифесте («unknown/unknown») сбивают проверку тега в панели Timeweb.
+          # Строго одна платформа и без аттестаций: лишние записи в манифесте
+          # («unknown/unknown») сбивают проверку тега в панели Timeweb.
           platforms: linux/amd64
           provenance: false
           sbom: false
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
-
-      - name: Открыть образ для чтения
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
-        run: |
-          curl -sS -X PATCH "https://api.github.com/orgs/${OWNER}/packages/container/zc-web" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            -H "Content-Type: application/json" \
-            -d '{"visibility":"public"}'
 
       - name: Сообщить Timeweb о новой версии
         continue-on-error: true
