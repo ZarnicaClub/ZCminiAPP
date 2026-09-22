@@ -3,7 +3,13 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+
+# Сборочная сеть платформы не имеет маршрута IPv6: pip уходит на IPv6-адреса
+# pypi.org/files.pythonhosted.org и падает с "[Errno 101] Network is unreachable".
+# Заставляем резолвер предпочитать IPv4 (docker.io по IPv4 работает).
+RUN printf 'precedence ::ffff:0:0/96  100\n' >> /etc/gai.conf
+
+RUN pip install --no-cache-dir --retries 5 --timeout 60 -r requirements.txt
 
 COPY shared ./shared
 COPY crm ./crm
