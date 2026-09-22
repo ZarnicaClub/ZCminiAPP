@@ -55,6 +55,11 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          # Собираем строго под одну платформу и без аттестаций: лишние записи
+          # в манифесте («unknown/unknown») сбивают проверку тега в панели Timeweb.
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
