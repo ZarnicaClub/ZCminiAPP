@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+!.env.worker.example
+.env.worker
 
 # Production data dumps (PII) вЂ” never commit
 data/
@@ -27,5 +29,5 @@ Thumbs.db
 .idea/
 .vscode/
 
-# временные фикстуры тестов
+# пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅ
 tests/_fixtures_tmp/

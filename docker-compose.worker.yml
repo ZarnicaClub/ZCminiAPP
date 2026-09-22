@@ -1,0 +1,41 @@
+# Воркер разбора звонков (IMAP Яндекса → S3 → БД) для отдельного российского VPS.
+#
+# Почему отдельный стенд, а не App Platform: воркер — не HTTP-сервис, а фоновый
+# цикл раз в 5 минут. На VPS он живёт по systemd/docker, перезапускается сам, а
+# веб-приложение при этом остаётся обычным приложением App Platform (без compose).
+#
+# Запуск (из корня репозитория):
+#   cp .env.worker.example .env.worker && nano .env.worker
+#   docker compose -f docker-compose.worker.yml up -d --build
+#   docker compose -f docker-compose.worker.yml logs -f
+#
+# Обновление кода:
+#   docker compose -f docker-compose.worker.yml up -d --build
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    image: zc-calls-worker:13.0
+    env_file:
+      - .env.worker
+    environment:
+      # Значения ниже можно переопределить в .env.worker.
+      MAIL_IMAP_HOST: ${MAIL_IMAP_HOST:-imap.yandex.ru}
+      MAIL_IMAP_PORT: ${MAIL_IMAP_PORT:-993}
+      MAIL_FOLDER: ${MAIL_FOLDER:-INBOX}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-https://s3.twcstorage.ru}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      CALL_TIMEZONE_OFFSET: ${CALL_TIMEZONE_OFFSET:-+03:00}
+      WORKER_INTERVAL_SECONDS: ${WORKER_INTERVAL_SECONDS:-300}
+      WORKER_HEALTH_PORT: ${WORKER_HEALTH_PORT:-8081}
+    ports:
+      # Порт состояния слушаем только на localhost — снаружи он не нужен,
+      # смотреть изнутри: curl -s localhost:8081/status
+      - "127.0.0.1:8081:8081"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
