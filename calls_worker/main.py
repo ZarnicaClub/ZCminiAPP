@@ -72,12 +72,34 @@ def notify_telegram(text: str) -> None:
 
 def main():
     setup_logging()
+
+    # Режим разового прогона: `python -m calls_worker.main --once`
+    # Нужен, когда цикл запускается внешним расписанием (Планировщик заданий Windows,
+    # cron, расписание Hermes), а не собственным бесконечным циклом.
+    import sys
+    once = "--once" in sys.argv
+
     log.info(
-        "calls-worker запущен: интервал %s c, health-порт %s, окно разбора писем %s ч, ящик %s",
+        "calls-worker запущен%s: интервал %s c, health-порт %s, окно разбора писем %s ч, ящик %s",
+        " (разовый прогон)" if once else "",
         INTERVAL, HEALTH_PORT,
         os.getenv("PARSER_LOOKBACK_HOURS") or "24",
         os.getenv("MAIL_USERNAME") or "(не задан)",
     )
+
+    if once:
+        try:
+            run_once()
+            log.info("разовый прогон завершён: писем %s, сохранено %s, без пары %s, ошибок %s",
+                     STATUS["processed"], STATUS["inserted"], STATUS["unmatched"], STATUS["errors"])
+        except Exception as e:  # noqa: BLE001
+            STATUS["errors"] += 1
+            STATUS["last_error"] = str(e)
+            log.exception("разовый прогон упал: %s", e)
+            notify_telegram(f"⚠️ calls-worker: сбой разового прогона\n{type(e).__name__}: {e}")
+            raise SystemExit(1)
+        return
+
     threading.Thread(target=_run_health_server, daemon=True).start()
 
     last_alert = 0.0
