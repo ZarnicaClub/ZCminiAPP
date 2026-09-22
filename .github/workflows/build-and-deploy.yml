@@ -30,7 +30,7 @@ permissions:
 env:
   # ВНИМАНИЕ: имена образов Docker только в нижнем регистре, поэтому здесь
   # жёстко указано zarnicaclub (а не github.repository_owner = ZarnicaClub).
-  IMAGE: ghcr.io/zarnicaclub/zc-app
+  IMAGE: ghcr.io/zarnicaclub/zc-web
 
 jobs:
   build:
@@ -65,7 +65,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OWNER: ${{ github.repository_owner }}
         run: |
-          curl -sS -X PATCH "https://api.github.com/orgs/${OWNER}/packages/container/zc-app" \
+          curl -sS -X PATCH "https://api.github.com/orgs/${OWNER}/packages/container/zc-web" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "Content-Type: application/json" \
