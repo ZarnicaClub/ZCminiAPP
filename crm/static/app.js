@@ -13,7 +13,6 @@ const state = {
   ordersFilter: "upcoming",
   ordersDate: null,
   selectedDate: null,
-  dayPeriod: "morning", // визуальный переключатель (без фильтрации)
   callsDate: null,
   bsoFilter: "all",
   bsoDate: null,
@@ -534,6 +533,14 @@ async function openClientCard(clientId) {
 
 /* ---------- экран «Расписание» ---------- */
 
+/* склонение числительных: 1 игра / 2 игры / 6 игр */
+function plural(n, one, few, many) {
+  const n10 = n % 10, n100 = n % 100;
+  if (n10 === 1 && n100 !== 11) return one;
+  if (n10 >= 2 && n10 <= 4 && (n100 < 12 || n100 > 14)) return few;
+  return many;
+}
+
 function renderWeek(d) {
   const mon = mondayOf(d);
   const sel = isoDate(d);
@@ -588,12 +595,24 @@ function renderSchedule() {
   renderWeek(d);
 
   const dayInfo = document.getElementById("dayInfo");
-  dayInfo.innerHTML = `
+  const dayList = ordersOn(isoDate(d));
+  const games = dayList.length;
+  const people = dayList.reduce((sum, o) => {
+    const n = parseInt(String(o.event?.qty ?? "").trim(), 10);
+    return sum + (Number.isFinite(n) ? n : 0);
+  }, 0);
+  dayInfo.innerHTML = games ? `
     <div class="day-info-title">${esc(fmtDayLong(d))}</div>
-    <div class="day-info-body">Сводка дня появится здесь</div>
+    <div class="day-stats">
+      <div class="day-stat"><span class="day-stat-ico">🎯</span><span class="day-stat-num">${games}</span><span class="day-stat-cap">${plural(games, "игра", "игры", "игр")}</span></div>
+      <div class="day-stat"><span class="day-stat-ico">👥</span><span class="day-stat-num">${people}</span><span class="day-stat-cap">${plural(people, "человек", "человека", "человек")}</span></div>
+    </div>
+  ` : `
+    <div class="day-info-title">${esc(fmtDayLong(d))}</div>
+    <div class="day-info-body">На этот день записей нет</div>
   `;
 
-  const list = sortOrders(ordersOn(isoDate(d)));
+  const list = sortOrders(dayList);
   const box = document.getElementById("scheduleList");
   if (!list.length) {
     box.innerHTML = `<div class="empty">На этот день записей нет</div>`;
@@ -920,14 +939,6 @@ if (navMore && moreMenu) {
 
 document.getElementById("prevMonth").addEventListener("click", () => shiftMonth(-1));
 document.getElementById("nextMonth").addEventListener("click", () => shiftMonth(1));
-
-document.querySelectorAll(".day-seg").forEach(btn => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".day-seg").forEach(x => x.classList.remove("active"));
-    btn.classList.add("active");
-    state.dayPeriod = btn.dataset.period;
-  });
-});
 
 document.querySelectorAll("#ordersFilterRow .chip").forEach(btn => {
   btn.addEventListener("click", () => {
