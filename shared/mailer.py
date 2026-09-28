@@ -1,22 +1,24 @@
-"""Отправка email-уведомлений (подтверждение брони) через SMTP.
+"""Отправка email-уведомлений (подтверждение брони) через Yandex Cloud Postbox.
 
-Самодостаточный модуль: HTML-шаблон и hero-картинка лежат рядом в shared/email/.
-Использует только stdlib (smtplib, email.mime, ssl) — новых зависимостей нет.
+Транспорт — HTTP API Postbox (совместим с Amazon SESv2), порт 443: исходящие
+почтовые порты на Timeweb App Platform закрыты (blocked_ports: 25/465/587/2525),
+поэтому SMTP с платформы физически не работает (проверено 25.09.2026: из 64
+оплаченных заказов не ушло ни одного письма).
+
+Письмо собирается как raw MIME (MIMEMultipart('related')) — это нужно, чтобы
+hero-картинка уходила inline с Content-ID: <zarnica-hero>, а не ссылкой на сайт.
+Новых зависимостей нет: boto3 уже используется для S3 (shared/s3.py).
 
 Правила безопасности:
-- feature-флаг: если SMTP_HOST не задан — ничего не отправляем (только лог);
+- feature-флаг: нет POSTBOX_KEY_ID/POSTBOX_SECRET — ничего не отправляем (только лог);
 - рендер и отправка вынесены сюда, БД здесь не трогаем (идемпотентность — в caller);
-- ошибка SMTP бросается наружу, чтобы caller зафиксировал её в логе статусов;
-- подключение только по IPv4 и короткий таймаут SMTP_TIMEOUT: в контейнере часто
-  нет IPv6 (отсюда OSError [Errno 99] Cannot assign requested address), а письмо
-  не должно задерживать ответ вебхука Tilda.
+- ошибка отправки бросается наружу, чтобы caller снял флаг confirmation_sent_at;
+- короткие таймауты: письмо — best-effort побочный эффект и не должно держать
+  фоновую задачу (а через неё — ответ вебхука Tilda).
 """
 import json
 import logging
 import os
-import smtplib
-import socket
-import ssl
 from datetime import datetime
 from email.header import Header
 from email.mime.image import MIMEImage
@@ -41,17 +43,36 @@ _MONTHS_GENITIVE = {
 
 # ---------------------------------------------------------------------
 # Константы письма и клуба. Правятся ЗДЕСЬ (в коде), НЕ в окружении.
-# В окружении остаются только секреты SMTP: SMTP_HOST/PORT/USER/PASSWORD.
+# В окружении остаются только ключи Postbox: POSTBOX_KEY_ID/POSTBOX_SECRET.
 # ---------------------------------------------------------------------
 FROM_NAME = "ЗарницаКлаб"
-FROM_EMAIL = ""  # пусто = отправитель равен SMTP_USER (почтовый ящик)
+FROM_EMAIL = "noreply@send.zarnicaclub.ru"  # подтверждённый домен Postbox (Easy DKIM)
+REPLY_TO = "info@zarnicaclub.ru"            # ответы клиентов идут на рабочий ящик клуба
 EMAIL_SUBJECT = "ЗарницаКлаб — бронирование подтверждено"
 EMAIL_FORMAT = "Пейнтбол"
 CLUB_MAP_URL = "https://yandex.ru/maps/-/CTXRbV3W"
-CLUB_PHONE = "+7 (495) 212-12-23"                      # TODO: реальный телефон клуба
-CLUB_MESSENGER = "Telegram / WhatsApp"  # TODO: актуальный ник/ссылка
-CLUB_SITE = "ЗарницаКлаб.рф"
-CLUB_ADDRESS = "МО, Новая Рига 30км, ЦКАД"                    # TODO: реальный адрес клуба
+CLUB_PHONE = "+7 (495) 212-12-23"                      # подтверждён Артёмом 28.09.2026
+CLUB_MESSENGER = "Telegram / WhatsApp"  # заглушка: Артём решит позже (28.09.2026)
+CLUB_SITE = "ЗарницаКлаб.рф"                # сайт с онлайн-кассой Т-Банк; в зоне .рф
+CLUB_ADDRESS = "МО, Новая Рига 30км, ЦКАД"                   # подтверждён 28.09.2026
+
+# Postbox (SESv2-совместимый эндпоинт). Регион обязателен для подписи запроса.
+POSTBOX_ENDPOINT = os.getenv("POSTBOX_ENDPOINT", "https://postbox.cloud.yandex.net")
+POSTBOX_REGION = os.getenv("POSTBOX_REGION", "ru-central1")
+
+
+def _env_timeout() -> float:
+    """POSTBOX_TIMEOUT из окружения (сек)."""
+    try:
+        value = float(os.getenv("POSTBOX_TIMEOUT", "10"))
+    except (TypeError, ValueError):
+        log.warning("POSTBOX_TIMEOUT задан неверно — использую 10 с")
+        return 10.0
+    return value if value > 0 else 10.0
+
+
+# Таймаут ожидания ответа Postbox (сек). Подключение — 5 с.
+POSTBOX_TIMEOUT = _env_timeout()
 
 
 def is_paid(order: OrderIn) -> bool:
@@ -118,7 +139,7 @@ def build_data(order: OrderIn) -> dict:
         "month": month,
         "year": year,
         "qty": order.qty or "1",
-        "session": order.session_time or "",
+        "session": (order.session_time or "").strip().rstrip(";").strip(),
         "format": EMAIL_FORMAT,
         "game": order.game or "",
         "tent": order.tent or "",
@@ -142,126 +163,53 @@ def render(template: str, data: dict) -> str:
     return template
 
 
-def smtp_enabled() -> bool:
-    """True, если SMTP настроен (feature-флаг). Если False — отправка выключена."""
-    return bool(os.getenv("SMTP_HOST"))
+def email_enabled() -> bool:
+    """True, если Postbox настроен (feature-флаг). Если False — отправка выключена."""
+    return bool(os.getenv("POSTBOX_KEY_ID")) and bool(os.getenv("POSTBOX_SECRET"))
 
 
-def _env_timeout() -> float:
-    """SMTP_TIMEOUT из окружения (сек)."""
-    try:
-        value = float(os.getenv("SMTP_TIMEOUT", "8"))
-    except (TypeError, ValueError):
-        log.warning("SMTP_TIMEOUT задан неверно — использую 8 с")
-        return 8.0
-    return value if value > 0 else 8.0
+def log_mail_config() -> None:
+    """Разовая диагностика отправки писем в логе старта сервиса.
 
-
-# Таймаут соединения с SMTP (сек). Письмо — best-effort побочный эффект: ожидание
-# недоступного SMTP не должно держать воркер и тем более ответ вебхука Tilda.
-SMTP_TIMEOUT = _env_timeout()
-
-
-def _smtp_host_port() -> tuple[str, int]:
-    """Хост и порт SMTP из окружения (порт с защитой от мусора в переменной)."""
-    host = os.environ["SMTP_HOST"]
-    try:
-        port = int(os.environ.get("SMTP_PORT", "587"))
-    except (TypeError, ValueError):
-        log.warning("SMTP_PORT задан неверно — использую 587")
-        port = 587
-    return host, port
-
-
-def _connect_ipv4(host: str, port: int, timeout: float, source_address=None) -> "socket.socket":
-    """TCP-соединение с SMTP только по IPv4, с перебором всех адресов хоста.
-
-    В контейнере часто нет IPv6, а у хоста есть AAAA-запись: обычный connect
-    в этом случае падает с OSError [Errno 99] Cannot assign requested address
-    (наблюдалось в production 05–09.09.2026). Поэтому адреса перебираем сами,
-    только семейство AF_INET, и логируем, что именно не получилось.
+    Показывает, включена ли отправка, с какого адреса и куда шлём, какие адреса
+    отдаёт DNS, и на месте ли шаблон с картинкой. Этого достаточно, чтобы отличить
+    «ключи не заданы» / «нет шаблона» / «эндпоинт недоступен» без доступа в контейнер.
     """
-    try:
-        infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
-    except OSError as exc:
-        log.error("SMTP: у %s нет IPv4-адреса: %s", host, exc)
-        raise
-    errors = []
-    for family, socktype, proto, _canon, sockaddr in infos:
-        sock = socket.socket(family, socktype, proto)
-        try:
-            sock.settimeout(timeout)
-            if source_address:
-                sock.bind(source_address)
-            sock.connect(sockaddr)
-            log.info("SMTP: подключение установлено %s:%s (%s)", host, port, sockaddr[0])
-            return sock
-        except OSError as exc:
-            errors.append("%s -> %s" % (sockaddr[0], exc))
-            sock.close()
-    log.error("SMTP: %s:%s недоступен (IPv4: %s): %s",
-              host, port, ", ".join(i[4][0] for i in infos), "; ".join(errors))
-    raise OSError("SMTP connect failed: " + "; ".join(errors))
-
-
-class _SMTPv4(smtplib.SMTP):
-    """SMTP (порт 587 + STARTTLS) с подключением только по IPv4."""
-
-    def _get_socket(self, host, port, timeout):
-        return _connect_ipv4(host, port, timeout or SMTP_TIMEOUT,
-                             getattr(self, "source_address", None))
-
-
-class _SMTPv4SSL(smtplib.SMTP_SSL):
-    """SMTP_SSL (порт 465) с подключением только по IPv4.
-
-    server_hostname берём из аргумента host — это исходное имя хоста, поэтому
-    SNI и проверка сертификата работают как обычно.
-    """
-
-    def _get_socket(self, host, port, timeout):
-        sock = _connect_ipv4(host, port, timeout or SMTP_TIMEOUT,
-                             getattr(self, "source_address", None))
-        return self.context.wrap_socket(sock, server_hostname=host)
-
-
-def log_smtp_config() -> None:
-    """Разовая диагностика SMTP в логе старта сервиса.
-
-    Показывает, куда и как сервис будет подключаться, и какие адреса отдаёт DNS.
-    Этого достаточно, чтобы отличить «в контейнере нет IPv6» / «порт закрыт
-    хостингом» от «неверный SMTP_HOST» без доступа внутрь контейнера.
-    """
-    if not smtp_enabled():
-        log.info("SMTP: выключен (SMTP_HOST не задан) — письма не отправляются")
+    if not email_enabled():
+        log.info("письма: выключены (POSTBOX_KEY_ID/POSTBOX_SECRET не заданы)")
         return
+    key_id = os.getenv("POSTBOX_KEY_ID", "")
     try:
-        host, port = _smtp_host_port()
-        try:
-            ipv4 = sorted({i[4][0] for i in socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)})
-        except OSError as exc:
-            ipv4 = ["ошибка: %s" % exc]
-        try:
-            ipv6 = sorted({i[4][0] for i in socket.getaddrinfo(host, port, socket.AF_INET6, socket.SOCK_STREAM)})
-        except OSError:
-            ipv6 = []
-        log.info("SMTP: host=%s port=%s ssl=%s timeout=%ss ipv4=%s ipv6=%s",
-                 host, port, port == 465, SMTP_TIMEOUT, ipv4, ipv6 or "нет")
-    except Exception:  # noqa: BLE001 — диагностика не должна мешать старту сервиса
-        log.exception("SMTP: не удалось собрать диагностику окружения")
+        import socket
+
+        endpoint_host = POSTBOX_ENDPOINT.replace("https://", "").split("/")[0]
+        ipv4 = sorted({i[4][0] for i in socket.getaddrinfo(endpoint_host, 443, socket.AF_INET, socket.SOCK_STREAM)})
+    except Exception as exc:  # noqa: BLE001 — диагностика не должна мешать старту
+        ipv4 = ["ошибка: %s" % exc]
+    log.info(
+        "письма: вкл | отправитель=%s reply-to=%s | postbox=%s (%s, ipv4=%s) timeout=%ss | ключ …%s | "
+        "шаблон=%s картинка=%s",
+        FROM_EMAIL, REPLY_TO, POSTBOX_ENDPOINT, POSTBOX_REGION, ipv4, POSTBOX_TIMEOUT,
+        key_id[-4:], HTML_PATH.exists(), HERO_PATH.exists(),
+    )
 
 
-def _smtp_send(to_email: str, subject: str, html: str) -> None:
-    smtp_host, smtp_port = _smtp_host_port()
-    smtp_user = os.environ.get("SMTP_USER", "")
-    smtp_password = os.environ.get("SMTP_PASSWORD", "")
-    from_email = FROM_EMAIL or smtp_user
-    from_name = FROM_NAME
+# ---------------------------------------------------------------------
+# Почтовая часть
+# ---------------------------------------------------------------------
+def build_message(order: OrderIn) -> MIMEMultipart:
+    """Собирает письмо: тема, адреса, HTML-версия, текстовая версия, inline-hero."""
+    html = render(HTML_PATH.read_text(encoding="utf-8"), build_data(order))
 
     msg = MIMEMultipart("related")
-    msg["Subject"] = str(Header(subject, "utf-8"))
-    msg["From"] = f'{str(Header(from_name, "utf-8"))} <{from_email}>'
-    msg["To"] = to_email
+    # ВАЖНО: именно .encode(), а не str(Header(...)) — str() возвращает некодированную
+    # строку, и в заголовке уезжает сырой UTF-8, который Postbox отвергает
+    # («email address parse failed (From)», проверено 28.09.2026).
+    msg["Subject"] = Header(EMAIL_SUBJECT, "utf-8").encode()
+    msg["From"] = f'{Header(FROM_NAME, "utf-8").encode()} <{FROM_EMAIL}>'
+    msg["To"] = order.customer_email or ""
+    if REPLY_TO:
+        msg["Reply-To"] = REPLY_TO
 
     alternative = MIMEMultipart("alternative")
     msg.attach(alternative)
@@ -276,18 +224,42 @@ def _smtp_send(to_email: str, subject: str, html: str) -> None:
         image.add_header("Content-ID", "<zarnica-hero>")
         image.add_header("Content-Disposition", "inline", filename="zarnica-hero.png")
         msg.attach(image)
+    return msg
 
-    context = ssl.create_default_context()
-    if smtp_port == 465:
-        server = _SMTPv4SSL(smtp_host, smtp_port, timeout=SMTP_TIMEOUT, context=context)
-    else:
-        server = _SMTPv4(smtp_host, smtp_port, timeout=SMTP_TIMEOUT)
-    with server:
-        if smtp_port != 465:
-            server.starttls(context=context)
-        if smtp_user:
-            server.login(smtp_user, smtp_password)
-        server.send_message(msg)
+
+def send_request_kwargs(msg: MIMEMultipart, to_email: str) -> dict:
+    """Аргументы вызова SESv2 SendEmail (чистая функция — удобно тестировать).
+
+    Raw-письмо, а не Simple: только так остаётся inline-картинка с cid:zarnica-hero.
+    """
+    return {
+        "FromEmailAddress": FROM_EMAIL,
+        "Destination": {"ToAddresses": [to_email]},
+        "ReplyToAddresses": [REPLY_TO] if REPLY_TO else [],
+        "Content": {"Raw": {"Data": msg.as_bytes()}},
+    }
+
+
+def _client():
+    """Клиент Postbox (boto3 sesv2). Импорт boto3 — ленивый, чтобы не тормозить старт."""
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client(
+        "sesv2",
+        region_name=POSTBOX_REGION,
+        endpoint_url=POSTBOX_ENDPOINT,
+        aws_access_key_id=os.getenv("POSTBOX_KEY_ID"),
+        aws_secret_access_key=os.getenv("POSTBOX_SECRET"),
+        config=Config(connect_timeout=5, read_timeout=POSTBOX_TIMEOUT,
+                      retries={"max_attempts": 2, "mode": "standard"}),
+    )
+
+
+def _postbox_send(msg: MIMEMultipart, to_email: str) -> str:
+    """Отправляет готовое письмо через Postbox, возвращает MessageId."""
+    response = _client().send_email(**send_request_kwargs(msg, to_email))
+    return str(response.get("MessageId", ""))
 
 
 def send_confirmation(order: OrderIn) -> str:
@@ -295,20 +267,20 @@ def send_confirmation(order: OrderIn) -> str:
 
     Возвращает статус:
       'sent'     — письмо отправлено;
-      'disabled' — SMTP не настроен (feature-флаг выключен);
+      'disabled' — Postbox не настроен (feature-флаг выключен);
       'no_email' — у заказа нет email.
-    При ошибке SMTP бросает исключение (caller фиксирует её в логе статусов).
+    При ошибке отправки бросает исключение (caller снимает флаг и пишет в лог).
     """
-    if not smtp_enabled():
-        log.info("SMTP_HOST не задан — email-уведомления отключены")
+    if not email_enabled():
+        log.info("POSTBOX_KEY_ID/POSTBOX_SECRET не заданы — email-уведомления отключены")
         return "disabled"
 
     if not order.customer_email:
         log.info("заказ %s без email — письмо пропущено", order.order_id)
         return "no_email"
 
-    subject = EMAIL_SUBJECT
-    html = render(HTML_PATH.read_text(encoding="utf-8"), build_data(order))
-    _smtp_send(order.customer_email, subject, html)
-    log.info("confirmation email sent: order=%s to=%s", order.order_id, order.customer_email)
+    message = build_message(order)
+    message_id = _postbox_send(message, order.customer_email)
+    log.info("confirmation email sent: order=%s to=%s message_id=%s",
+             order.order_id, order.customer_email, message_id)
     return "sent"

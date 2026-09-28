@@ -6,7 +6,7 @@ from psycopg.errors import UndefinedColumn
 
 from shared.contracts import BsoIn, OrderIn
 from shared.db import pool
-from shared.mailer import is_paid, send_confirmation, smtp_enabled
+from shared.mailer import email_enabled, is_paid, send_confirmation
 
 log = logging.getLogger("orders_webhook.service")
 
@@ -65,7 +65,7 @@ def _maybe_send_confirmation(order: OrderIn) -> None:
     заказ к этому моменту уже сохранён.
     """
     try:
-        if not is_paid(order) or not order.customer_email or not smtp_enabled():
+        if not is_paid(order) or not order.customer_email or not email_enabled():
             return
         if not _claim_confirmation(order.order_id):
             log.info("confirmation already sent, skip: order=%s", order.order_id)

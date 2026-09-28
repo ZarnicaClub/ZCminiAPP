@@ -9,15 +9,15 @@ from orders_webhook.service import upsert_bso, upsert_order
 from shared.gsheets import parse_gsheets_bso
 from shared.health import check_db, check_s3
 from shared.logging_config import set_trace_id, setup_logging
-from shared.mailer import log_smtp_config
+from shared.mailer import log_mail_config
 from shared.tilda import parse_tilda_order
 
 setup_logging()
 log = logging.getLogger("orders_webhook.app")
 
-# Разовая диагностика SMTP в логе старта сервиса: видно, куда и по каким адресам
-# (IPv4/IPv6) сервис будет подключаться, не заходя внутрь контейнера.
-log_smtp_config()
+# Разовая диагностика отправки писем в логе старта сервиса: включена ли отправка,
+# с какого адреса и куда шлём (Postbox), на месте ли шаблон и картинка.
+log_mail_config()
 
 app = FastAPI(title="orders-webhook", version="0.1.0")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")

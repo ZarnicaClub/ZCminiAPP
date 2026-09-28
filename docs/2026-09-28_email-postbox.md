@@ -1,0 +1,69 @@
+# Отчёт об изменении — письма клиентам через Yandex Cloud Postbox
+
+- **Дата:** 28.09.2026
+- **Сервис:** `orders-webhook` (отправка писем внутри общего приложения `ZCminiApp`)
+- **Зачем:** SMTP с Timeweb App Platform физически не работает — у приложения закрыты исходящие
+  почтовые порты (`blocked_ports: 25/465/587/2525`). Итог на 25.09.2026: из 64 оплаченных заказов
+  **не ушло ни одного письма** (у всех пусто `orders.confirmation_sent_at`).
+- **Что сделано:** транспорт заменён на HTTP API Yandex Cloud Postbox (совместим с Amazon SESv2,
+  порт 443). Шаблон письма и вся логика вокруг остались прежними.
+
+## Что изменено
+
+| Файл | Что |
+|---|---|
+| `shared/mailer.py` | `_smtp_send` → `_postbox_send` (boto3 sesv2, env `POSTBOX_*`); `smtp_enabled()` → `email_enabled()`; `log_smtp_config()` → `log_mail_config()`; отправитель `noreply@send.zarnicaclub.ru`, `Reply-To: info@zarnicaclub.ru`; заголовки From/Subject теперь через `Header(...).encode()` (RFC 2047) |
+| `orders_webhook/service.py` | импорт `email_enabled` вместо `smtp_enabled` |
+| `orders_webhook/app.py` | `log_mail_config()` на старте вместо `log_smtp_config()` |
+| `.env.example`, `docker-compose.yml`, `docker/docker-compose.dev-3services.yml` | секция SMTP → POSTBOX |
+| `tests/test_mailer.py` | новый файл: 7 тестов (маппинг полей, структура письма, raw-запрос, feature-флаг) |
+
+Письмо уходит **raw MIME** (а не Simple), потому что в шаблоне hero-картинка подключена как
+`cid:zarnica-hero` — Simple-контент вложения не умеет. Новых зависимостей нет: boto3 уже
+использовался для S3.
+
+## Переменные окружения (App Platform)
+
+Удалить/оставить неиспользуемыми `SMTP_*`, добавить:
+
+```
+POSTBOX_KEY_ID     — идентификатор статического ключа сервисного аккаунта postbox-user
+POSTBOX_SECRET     — секрет ключа
+POSTBOX_REGION     — ru-central1 (по умолчанию)
+POSTBOX_ENDPOINT   — https://postbox.cloud.yandex.net (по умолчанию)
+```
+
+Если `POSTBOX_KEY_ID`/`POSTBOX_SECRET` не заданы — отправка выключена (feature-флаг), письма не
+уходят, вебхук работает как обычно.
+
+## Проверка (фактическая)
+
+- `pytest -q` в `zcminiapp` → **31 passed** (24 прежних + 7 новых).
+- Живая отправка боевым кодом (шаблон + hero, реальный оплаченный заказ из БД, получатель —
+  свой ящик `zc-pb@mail.ru`): Postbox принял, `MessageId DLR0DBRBUI4V.2T7V062UDXBLB@ingress1-klg`.
+- Доставленное письмо: папка **INBOX**, `spf=pass`, **`dkim=pass header.d=send.zarnicaclub.ru`**
+  (плюс вторая подпись `postbox.yandexcloud.net`), `Reply-To: info@zarnicaclub.ru`,
+  hero-картинка на месте (`Content-ID: <zarnica-hero>`, 833 КБ).
+
+## Грабли (стоили времени, не повторять)
+
+1. **`str(Header("ЗарницаКлаб", "utf-8"))` возвращает НЕкодированную строку.** С ней в заголовке
+   уходит сырой UTF-8, и Postbox отвечает `BadRequestException: email address parse failed (From)`.
+   Нужен `.encode()`: `Header(...).encode()` → `=?utf-8?b?...?=`. Проверено: с `.encode()` письмо
+   принимается, с `str()` — нет. ASCII-имя тоже проходит, русское без кодирования — нет.
+2. **`Header(s, charset, "base64")` — ошибка**: третий позиционный аргумент это `maxlinelen`, а не
+   кодировка; при передаче строки падает `TypeError` внутри `header_encode_lines`.
+3. Отправка только адресом (`From: noreply@send.zarnicaclub.ru`) Postbox тоже принимает — если
+   когда-нибудь понадобится убрать имя, это допустимый путь.
+
+## Откат
+
+- Выключить без правки кода: убрать `POSTBOX_KEY_ID`/`POSTBOX_SECRET` из окружения.
+- Откат кода: `git revert` коммита в `main` (или восстановить `shared/mailer.py` из предыдущей ревизии).
+
+## Статус
+
+- [x] код и тесты
+- [x] живая проверка отправки (Postbox + доставка в INBOX с DKIM pass)
+- [ ] переменные `POSTBOX_*` в панели Timeweb (вносит Артём)
+- [ ] выкат (push в `main` → GitHub Actions собирает образ → деплой приложения `ZCminiApp`)
