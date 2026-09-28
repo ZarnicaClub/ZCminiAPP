@@ -64,7 +64,7 @@ jobs:
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
 
-      - name: Сообщить Timeweb о новой версии
+      - name: Переключить приложение на новый образ
         continue-on-error: true
         env:
           TIMEWEB_API_TOKEN: ${{ secrets.TIMEWEB_API_TOKEN }}
@@ -74,7 +74,14 @@ jobs:
             echo "Секреты Timeweb не заданы — шаг пропущен."
             exit 0
           fi
-          curl -sS -X POST "https://api.timeweb.cloud/api/v1/apps/${TIMEWEB_APP_ID}/deploy" \
+          # Переключаем тег приложения на ТЕГ ЭТОГО КОММИТА и это запускает деплой.
+          # Почему не POST /deploy (проверено 28.09.2026):
+          #   POST /apps/{id}/deploy с пустым телом → 400 «commit_sha should not be null»;
+          #   POST с commit_sha → 500 (ошибка платформы на стороне Timeweb);
+          #   PATCH docker_image_tag → 200 и деплой, но платформа НЕ перетягивает образ,
+          #     если тег не изменился (тот же latest) — контейнер поднимается со старым кодом.
+          # Поэтому проставляем неизменяемый тег коммита: он новый каждый раз, и образ точно свежий.
+          curl -sS -X PATCH "https://api.timeweb.cloud/api/v1/apps/${TIMEWEB_APP_ID}" \
             -H "Authorization: Bearer ${TIMEWEB_API_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d '{}'
+            -d "{\"docker_image\": \"${IMAGE}\", \"docker_image_tag\": \"${GITHUB_SHA}\"}"
