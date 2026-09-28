@@ -55,8 +55,8 @@ def _release_confirmation(order_id: str) -> None:
 def _maybe_send_confirmation(order: OrderIn) -> None:
     """Отправляет подтверждение брони клиенту (email уже есть в orders.customer_email).
 
-    Вызывается ПОСЛЕ ответа Tilda (background-задача, см. upsert_order): SMTP может
-    быть медленным или недоступным, и вебхук не должен его ждать — иначе Tilda
+    Вызывается ПОСЛЕ ответа Tilda (background-задача, см. upsert_order): отправка письма
+    (Postbox) может быть медленной или недоступной, и вебхук не должен её ждать — иначе Tilda
     показывает «Произошла ошибка при отправке данных на Webhook URL».
 
     1 письмо на заказ: флаг занимается атомарно до отправки, а при неудаче
@@ -83,7 +83,7 @@ def upsert_order(order: OrderIn, background=None) -> None:
     """Создаёт/линкует client по телефону и upsert заказа (без order_items).
 
     background — FastAPI BackgroundTasks: письмо-подтверждение уходит ПОСЛЕ ответа
-    Tilda, поэтому недоступный SMTP больше не задерживает вебхук. Без background
+    Tilda, поэтому недоступный почтовый сервис больше не задерживает вебхук. Без background
     (скрипты, тесты) письмо отправляется синхронно.
     """
     with pool().connection() as conn:

@@ -143,7 +143,8 @@ def build_data(order: OrderIn) -> dict:
         "month": month,
         "year": year,
         "qty": order.qty or "1",
-        "session": (order.session_time or "").strip().rstrip(";").strip(),
+        # из Тильды время приходит как «- Утренний с 9:00 до 14:45;» — чистим края
+        "session": (order.session_time or "").strip().strip("-\u2013\u2014;: \u00a0").strip(),
         "format": EMAIL_FORMAT,
         "game": order.game or "",
         "tent": order.tent or "",

@@ -24,7 +24,7 @@ def order():
         customer_email="client@example.com",
         game="Пейнтбол 500 шаров",
         tent="Беседка №3",
-        session_time="12:00",
+        session_time="- Утренний с 9:00 до 14:45;",
         qty="5",
         raw_payload={"payment": {"products": [{"quantity": 5, "price": 1000}]}},
     )
@@ -43,7 +43,8 @@ def test_template_and_mapping(order):
     assert "26" in html and "СЕНТЯБРЯ" in html and "2026" in html
     assert "1241615321" in html          # номер заказа
     assert "5 000" in html               # сумма
-    assert "12:00" in html               # сеанс
+    assert "Утренний с 9:00 до 14:45" in html, "сеанс должен выводиться без «- » и «;»"
+    assert "- Утренний" not in html
     assert "Пейнтбол 500 шаров" in html  # тариф
     assert mailer.CLUB_PHONE in html
     assert mailer.CLUB_ADDRESS in html
