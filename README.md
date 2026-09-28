@@ -69,3 +69,16 @@ implementation/
 - `email_id` = **IMAP UID** (не sequence number).
 - Фронтенд **встроен в код** (`crm/webassets.py`, генерируется `scripts/gen_webassets.py` из `crm/templates|static/`).
 - Аутентификация API — Telegram `initData` (HMAC), без токена — dev-режим.
+
+## Релизы (как выпускать версии)
+
+1. Поднять версию в файле **`VERSION`** в корне (формат как исторически: `13.01`, `13.02`, …) —
+   она же становится тегом образа и версией приложения в App Platform.
+2. `git commit` + `git push origin main`.
+3. GitHub Actions (`.github/workflows/build-and-deploy.yml`) сам: прогоняет тесты, собирает образ
+   с тегами `:<VERSION>`, `:latest`, `:<sha>` и переключает приложение Timeweb на `:<VERSION>`
+   (PATCH `docker_image_tag` — это и запускает деплой).
+
+Почему тег версии, а не `latest`: платформа **не перетягивает образ**, если тег не изменился, —
+`latest` после правки переменных в панели поднимает старый код. Версия из `VERSION` всегда новая.
+`APP_VERSION` в `app/main.py` держать равной `VERSION` (видно в логе старта: `zc-app 13.01 запущен`).

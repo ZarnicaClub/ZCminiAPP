@@ -49,6 +49,13 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Прочитать версию
+        id: version
+        run: |
+          VERSION=$(cat VERSION | tr -d '[:space:]')
+          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Версия сборки: ${VERSION}"
+
       - name: Собрать и загрузить образ
         uses: docker/build-push-action@v6
         with:
@@ -61,6 +68,7 @@ jobs:
           provenance: false
           sbom: false
           tags: |
+            ${{ env.IMAGE }}:${{ steps.version.outputs.value }}
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
 
@@ -74,14 +82,15 @@ jobs:
             echo "Секреты Timeweb не заданы — шаг пропущен."
             exit 0
           fi
-          # Переключаем тег приложения на ТЕГ ЭТОГО КОММИТА и это запускает деплой.
-          # Почему не POST /deploy (проверено 28.09.2026):
+          # Переключаем приложение на тег ВЕРСИИ (человеческое имя вида 13.01) — это же
+          # и запускает деплой. Почему не POST /deploy (проверено 28.09.2026):
           #   POST /apps/{id}/deploy с пустым телом → 400 «commit_sha should not be null»;
           #   POST с commit_sha → 500 (ошибка платформы на стороне Timeweb);
-          #   PATCH docker_image_tag → 200 и деплой, но платформа НЕ перетягивает образ,
-          #     если тег не изменился (тот же latest) — контейнер поднимается со старым кодом.
-          # Поэтому проставляем неизменяемый тег коммита: он новый каждый раз, и образ точно свежий.
+          #   PATCH с тем же тегом деплой запускает, но образ НЕ перетягивает —
+          #     контейнер поднимается со старым кодом.
+          # Поэтому версия берётся из файла VERSION: она меняется каждый релиз, тег всегда новый.
+          # Для трассируемости рядом публикуется тег с sha коммита (в приложении он не нужен).
           curl -sS -X PATCH "https://api.timeweb.cloud/api/v1/apps/${TIMEWEB_APP_ID}" \
             -H "Authorization: Bearer ${TIMEWEB_API_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d "{\"docker_image\": \"${IMAGE}\", \"docker_image_tag\": \"${GITHUB_SHA}\"}"
+            -d "{\"docker_image\": \"${IMAGE}\", \"docker_image_tag\": \"${{ steps.version.outputs.value }}\"}"

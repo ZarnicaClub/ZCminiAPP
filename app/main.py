@@ -26,7 +26,7 @@ from shared.health import check_db, check_s3
 
 log = logging.getLogger("app.main")
 
-APP_VERSION = "13.0"
+APP_VERSION = "13.01"
 
 app = FastAPI(title="zc-app", version=APP_VERSION)
 
@@ -38,6 +38,7 @@ async def _start_gsheets_pull() -> None:
     Раньше данные присылал Apps Script из таблицы; после удаления старого сервиса
     поток развёрнут — читаем таблицу сами (см. orders_webhook/gsheets_pull.py).
     """
+    log.info("zc-app %s запущен", APP_VERSION)
     gsheets_pull.log_config()
     if gsheets_pull.enabled():
         asyncio.create_task(gsheets_pull.loop_forever())
