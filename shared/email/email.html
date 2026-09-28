@@ -17,7 +17,7 @@ Then the hero image is referenced as cid:zarnica-hero.
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" align="center" style="width:100%;max-width:900px;background:#f4eeba;">
 
 <tr><td style="padding:0;border-radius:22px 22px 0 0;overflow:hidden;">
-<img src="cid:zarnica-hero" width="100%" alt="ЗарницаКлаб — бронирование подтверждено" style="display:block;width:100%;height:auto;border:0;">
+<img src="cid:zarnica-hero" width="100%" alt="Ваше бронирование подтверждено" style="display:block;width:100%;height:auto;border:0;">
 </td></tr>
 
 <tr><td style="padding:28px 34px 8px;">
@@ -46,38 +46,39 @@ Then the hero image is referenced as cid:zarnica-hero.
 
 <tr><td style="padding:20px 24px 0;">
 <!-- Две карточки одного размера. Равная высота — фиксированная height на ячейках (email-клиенты
-     flex/grid не понимают); внутри карточек строки собраны таблицами «подпись | значение»,
+     flex/grid не понимают; высота подобрана так, чтобы пустого места почти не оставалось);
+     строки собраны таблицами «подпись | значение»,
      чтобы длинные значения переносились внутри своей ячейки и не налезали на разделитель. -->
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
 <tr>
-<td width="50%" height="300" valign="top" style="height:300px;padding:0 8px 0 0;">
+<td width="50%" height="264" valign="top" style="height:264px;padding:0 8px 0 0;">
 <table role="presentation" width="100%" height="100%" cellspacing="0" cellpadding="0" border="0" style="height:100%;background:#ffffff;border:1px solid #e5e4dc;border-radius:18px;">
 <tr><td valign="top" style="padding:22px;">
 <div style="font-size:16px;font-weight:800;letter-spacing:.5px;color:#46512f;text-transform:uppercase;padding-bottom:14px;">Ваша игра</div>
 
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
 <tr>
-<td width="42%" valign="top" style="font-size:13px;color:#777b6b;padding:9px 8px 9px 0;border-bottom:1px solid #e6e6df;">Формат</td>
-<td valign="top" style="font-size:13px;color:#20231d;padding:9px 0;border-bottom:1px solid #e6e6df;text-align:right;">{{format}}</td>
+<td width="42%" valign="top" style="font-size:13px;color:#777b6b;padding:14px 8px 14px 0;border-bottom:1px solid #e6e6df;">Формат</td>
+<td valign="top" style="font-size:13px;color:#20231d;padding:14px 0;border-bottom:1px solid #e6e6df;text-align:right;">{{format}}</td>
 </tr>
 </table>
 
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
 <tr>
-<td width="42%" valign="top" style="font-size:13px;color:#777b6b;padding:9px 8px 9px 0;border-bottom:1px solid #e6e6df;">Тариф</td>
-<td valign="top" style="font-size:13px;color:#20231d;padding:9px 0;border-bottom:1px solid #e6e6df;text-align:right;">{{game}}</td>
+<td width="42%" valign="top" style="font-size:13px;color:#777b6b;padding:14px 8px 14px 0;border-bottom:1px solid #e6e6df;">Тариф</td>
+<td valign="top" style="font-size:13px;color:#20231d;padding:14px 0;border-bottom:1px solid #e6e6df;text-align:right;">{{game}}</td>
 </tr>
 </table>
 
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
 <tr>
-<td width="42%" valign="top" style="font-size:13px;color:#777b6b;padding:9px 8px 0 0;">Размещение</td>
-<td valign="top" style="font-size:13px;color:#20231d;padding:9px 0 0;text-align:right;">{{tent}}</td>
+<td width="42%" valign="top" style="font-size:13px;color:#777b6b;padding:14px 8px 0 0;">Размещение</td>
+<td valign="top" style="font-size:13px;color:#20231d;padding:14px 0 0;text-align:right;">{{tent}}</td>
 </tr>
 </table>
 </td></tr></table>
 </td>
-<td width="50%" height="300" valign="top" style="height:300px;padding:0 0 0 8px;">
+<td width="50%" height="264" valign="top" style="height:264px;padding:0 0 0 8px;">
 <table role="presentation" width="100%" height="100%" cellspacing="0" cellpadding="0" border="0" style="height:100%;background:#ffffff;border:1px solid #e5e4dc;border-radius:18px;">
 <tr><td valign="top" style="padding:22px;">
 <div style="font-size:16px;font-weight:800;letter-spacing:.5px;color:#46512f;text-transform:uppercase;padding-bottom:14px;">Ваш заказ</div>
@@ -112,7 +113,7 @@ Then the hero image is referenced as cid:zarnica-hero.
 <tr><td style="padding:24px;">
 <div style="font-size:19px;font-weight:800;color:#46512f;">ЗарницаКлаб</div>
 <div style="font-size:10px;letter-spacing:1.4px;color:#777b6b;padding-top:3px;">ПЕЙНТБОЛЬНЫЙ КЛУБ ОСНОВАН В 2012г.</div>
-<div style="font-size:13px;line-height:1.6;color:#4f5449;padding-top:15px;">Телефон: {{club_phone}}<br>Telegram / WhatsApp: {{club_messenger}}<br>Сайт: {{club_site}}<br>Адрес: {{club_address}}</div>
+<div style="font-size:13px;line-height:1.6;color:#4f5449;padding-top:15px;">Телефон: {{club_phone}}<br>{{club_messenger}}<br>Сайт: {{club_site}}<br>Адрес: {{club_address}}</div>
 <div style="font-size:17px;font-style:italic;color:#56613b;padding-top:18px;">До встречи в ЗарницаКлаб!</div>
 </td></tr></table>
 </td></tr>
