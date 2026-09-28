@@ -19,6 +19,7 @@ import base64
 import json
 import logging
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -37,6 +38,11 @@ SCOPE_DRIVE = "https://www.googleapis.com/auth/drive.metadata.readonly"
 DEFAULT_SHEET = "БАЛАНС"
 DEFAULT_DATE_FROM = "2026-08-13"
 DEFAULT_ARTICLE = "Касса"
+# Запасной источник ключа робота: объект в закрытом хранилище S3 (переменная не нужна).
+DEFAULT_SA_S3_KEY = "system/gsheets-sa.json"
+
+# Откуда взяли ключ (для лога старта: видно, что именно сработало).
+_sa_source = "не найден"
 
 # Заголовки колонок в листе «БАЛАНС» -> имена полей payload (как в старом Apps Script).
 COLUMNS = {
@@ -54,23 +60,74 @@ COLUMNS = {
 # ---------------------------------------------------------------------
 # Доступ к Google
 # ---------------------------------------------------------------------
-def _sa_info() -> Optional[dict]:
-    """Ключ сервисного аккаунта: из base64-переменной или из файла."""
-    raw_b64 = os.getenv("GSHEETS_SA_B64")
-    if raw_b64:
+def _parse_sa_text(text: str) -> Optional[dict]:
+    """Разбирает ключ из строки: чистый JSON, base64 или base64url.
+
+    Терпим к тому, что переменная при копировании через панель портится: лишние кавычки,
+    переводы строк, потерянные символы «=» в конце (base64 требует выравнивания длины).
+    """
+    text = (text or "").strip().strip('"').strip("'").strip()
+    if not text:
+        return None
+    if text.lstrip().startswith("{"):
+        return json.loads(text)
+    compact = re.sub(r"\s+", "", text)
+    compact += "=" * (-len(compact) % 4)  # дописываем выравнивание, если панель его съела
+    for decoder in (base64.b64decode, base64.urlsafe_b64decode):
         try:
-            return json.loads(base64.b64decode(raw_b64).decode("utf-8"))
-        except Exception:  # noqa: BLE001
-            log.exception("GSHEETS_SA_B64 не удалось разобрать как base64(JSON)")
-            return None
+            return json.loads(decoder(compact).decode("utf-8"))
+        except Exception:  # noqa: BLE001 — пробуем следующий вариант
+            continue
+    return None
+
+
+def _sa_from_s3() -> Optional[dict]:
+    """Запасной путь: ключ лежит в закрытом хранилище S3 (объект GSHEETS_SA_S3_KEY).
+
+    Так надёжнее переменной: длинную строку в панели легко сохранить битой, а объект в S3
+    не зависит от ограничений поля ввода.
+    """
+    key = os.getenv("GSHEETS_SA_S3_KEY", DEFAULT_SA_S3_KEY)
+    if not key:
+        return None
+    try:
+        from shared.s3 import s3_client
+
+        client, bucket = s3_client()
+        body = client.get_object(Bucket=bucket, Key=key)["Body"].read().decode("utf-8")
+        return json.loads(body)
+    except Exception:  # noqa: BLE001 — S3 опционален, не валим старт приложения
+        log.warning("ключ робота из S3 (%s) не прочитан", key)
+        return None
+
+
+def _sa_info() -> Optional[dict]:
+    """Ключ сервисного аккаунта: переменная (base64/JSON) → файл → S3.
+
+    Что было: ключ лежал только в переменной, и при потере символов при копировании
+    забор молча не работал. Теперь источников три, а причина отказа попадает в лог.
+    """
+    global _sa_source
+    raw = os.getenv("GSHEETS_SA_B64")
+    if raw:
+        info = _parse_sa_text(raw)
+        if info:
+            _sa_source = f"переменная GSHEETS_SA_B64 ({len(raw)} символов)"
+            return info
+        log.error("GSHEETS_SA_B64 не разобран как base64(JSON): длина %d символов, "
+                  "похоже строка сохранена в панели не целиком", len(raw))
     path = os.getenv("GSHEETS_SA_FILE")
     if path and os.path.exists(path):
         try:
             with open(path, encoding="utf-8") as f:
+                _sa_source = f"файл {path}"
                 return json.load(f)
         except Exception:  # noqa: BLE001
             log.exception("не удалось прочитать файл ключа %s", path)
-            return None
+    info = _sa_from_s3()
+    if info:
+        _sa_source = f"S3 объект {os.getenv('GSHEETS_SA_S3_KEY', DEFAULT_SA_S3_KEY)}"
+        return info
     return None
 
 
@@ -285,11 +342,12 @@ def enabled() -> bool:
 
 
 def log_config() -> None:
-    """Диагностика в логе старта: включён ли забор и куда ходим."""
+    """Диагностика в логе старта: включён ли забор, откуда ключ и куда ходим."""
     info = _sa_info()
-    log.info("БСО из Google Sheets: %s | робот=%s | лист=%s | отбор: статья «%s», дата с %s",
+    log.info("БСО из Google Sheets: %s | робот=%s (ключ: %s) | лист=%s | отбор: статья «%s», дата с %s",
              "включён" if enabled() else "выключен",
              (info or {}).get("client_email", "—"),
+             _sa_source,
              os.getenv("GSHEETS_SHEET_NAME", DEFAULT_SHEET),
              os.getenv("GSHEETS_ARTICLE", DEFAULT_ARTICLE),
              os.getenv("GSHEETS_DATE_FROM", DEFAULT_DATE_FROM))

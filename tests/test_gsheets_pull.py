@@ -3,9 +3,14 @@
 Проверяем чистые функции: разбор даты, поиск колонок по заголовкам и отбор строк —
 правила повторяют старый Apps Script (`gsheets_webhook/apps_script.gs`).
 """
+import base64
+import json
+
 import pytest
 
 from orders_webhook import gsheets_pull as gp
+
+SA_STUB = {"type": "service_account", "client_email": "robot@example.com", "private_key": "—"}
 
 
 @pytest.mark.parametrize("raw,expected", [
@@ -91,6 +96,25 @@ def test_payload_parses_into_bso_contract():
 def test_enabled_requires_flag_and_key(monkeypatch):
     monkeypatch.delenv("GSHEETS_PULL_ENABLED", raising=False)
     monkeypatch.delenv("GSHEETS_SA_B64", raising=False)
+    monkeypatch.setenv("GSHEETS_SA_S3_KEY", "")  # пустое значение выключает запасной источник S3
     assert gp.enabled() is False
     monkeypatch.setenv("GSHEETS_PULL_ENABLED", "1")
     assert gp.enabled() is False, "без ключа робота забор не включаем"
+
+
+def test_ключ_из_s3_включает_забор(monkeypatch):
+    """Если ключ лежит в S3 (объект), флаг включает забор — переменная с ключом не нужна."""
+    monkeypatch.setenv("GSHEETS_PULL_ENABLED", "1")
+    monkeypatch.delenv("GSHEETS_SA_B64", raising=False)
+    monkeypatch.setenv("GSHEETS_SA_S3_KEY", "system/gsheets-sa.json")
+    monkeypatch.setattr(gp, "_sa_from_s3", lambda: {"client_email": "robot@example.com"})
+    assert gp.enabled() is True
+
+
+def test_переменная_важнее_s3(monkeypatch):
+    """Порядок источников: значение из переменной приложения главнее запасного из S3."""
+    monkeypatch.setenv("GSHEETS_PULL_ENABLED", "1")
+    monkeypatch.setenv("GSHEETS_SA_B64", base64.b64encode(json.dumps(SA_STUB).encode()).decode())
+    monkeypatch.setenv("GSHEETS_SA_S3_KEY", "system/gsheets-sa.json")
+    monkeypatch.setattr(gp, "_sa_from_s3", lambda: {"client_email": "из-s3@example.com"})
+    assert gp._sa_info()["client_email"] == SA_STUB["client_email"]
