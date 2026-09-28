@@ -45,21 +45,42 @@ Then the hero image is referenced as cid:zarnica-hero.
 </td></tr>
 
 <tr><td style="padding:20px 24px 0;">
+<!-- Две карточки одного размера. Равная высота — фиксированная height на ячейках (email-клиенты
+     flex/grid не понимают); внутри карточек строки собраны таблицами «подпись | значение»,
+     чтобы длинные значения переносились внутри своей ячейки и не налезали на разделитель. -->
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
 <tr>
-<td width="50%" valign="top" style="padding-right:8px;">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#ffffff;border:1px solid #e5e4dc;border-radius:18px;">
-<tr><td style="padding:22px;">
-<div style="font-size:16px;font-weight:800;letter-spacing:.5px;color:#46512f;text-transform:uppercase;padding-bottom:16px;">Ваша игра</div>
-<div style="font-size:13px;color:#777b6b;padding:7px 0;border-bottom:1px solid #e6e6df;">Формат <span style="float:right;color:#20231d;">{{format}}</span></div>
-<div style="font-size:13px;color:#777b6b;padding:7px 0;border-bottom:1px solid #e6e6df;">Тариф <span style="float:right;color:#20231d;">{{game}}</span></div>
-<div style="font-size:13px;color:#777b6b;padding:7px 0;">Размещение <span style="float:right;color:#20231d;max-width:55%;text-align:right;">{{tent}}</span></div>
+<td width="50%" height="300" valign="top" style="height:300px;padding:0 8px 0 0;">
+<table role="presentation" width="100%" height="100%" cellspacing="0" cellpadding="0" border="0" style="height:100%;background:#ffffff;border:1px solid #e5e4dc;border-radius:18px;">
+<tr><td valign="top" style="padding:22px;">
+<div style="font-size:16px;font-weight:800;letter-spacing:.5px;color:#46512f;text-transform:uppercase;padding-bottom:14px;">Ваша игра</div>
+
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+<tr>
+<td width="42%" valign="top" style="font-size:13px;color:#777b6b;padding:9px 8px 9px 0;border-bottom:1px solid #e6e6df;">Формат</td>
+<td valign="top" style="font-size:13px;color:#20231d;padding:9px 0;border-bottom:1px solid #e6e6df;text-align:right;">{{format}}</td>
+</tr>
+</table>
+
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+<tr>
+<td width="42%" valign="top" style="font-size:13px;color:#777b6b;padding:9px 8px 9px 0;border-bottom:1px solid #e6e6df;">Тариф</td>
+<td valign="top" style="font-size:13px;color:#20231d;padding:9px 0;border-bottom:1px solid #e6e6df;text-align:right;">{{game}}</td>
+</tr>
+</table>
+
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+<tr>
+<td width="42%" valign="top" style="font-size:13px;color:#777b6b;padding:9px 8px 0 0;">Размещение</td>
+<td valign="top" style="font-size:13px;color:#20231d;padding:9px 0 0;text-align:right;">{{tent}}</td>
+</tr>
+</table>
 </td></tr></table>
 </td>
-<td width="50%" valign="top" style="padding-left:8px;">
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#ffffff;border:1px solid #e5e4dc;border-radius:18px;">
-<tr><td style="padding:22px;">
-<div style="font-size:16px;font-weight:800;letter-spacing:.5px;color:#46512f;text-transform:uppercase;padding-bottom:16px;">Ваш заказ</div>
+<td width="50%" height="300" valign="top" style="height:300px;padding:0 0 0 8px;">
+<table role="presentation" width="100%" height="100%" cellspacing="0" cellpadding="0" border="0" style="height:100%;background:#ffffff;border:1px solid #e5e4dc;border-radius:18px;">
+<tr><td valign="top" style="padding:22px;">
+<div style="font-size:16px;font-weight:800;letter-spacing:.5px;color:#46512f;text-transform:uppercase;padding-bottom:14px;">Ваш заказ</div>
 <div style="font-size:14px;line-height:1.45;">Игра в клубе ЗарницаКлаб<br><strong>{{order_item_qty}} × {{order_item_price}} ₽</strong></div>
 <div style="border-top:1px solid #e1e2d9;margin-top:14px;padding-top:14px;font-size:13px;color:#46512f;">Внесено</div>
 <div style="font-size:26px;font-weight:800;padding-top:2px;">{{payment_amount}} ₽</div>
