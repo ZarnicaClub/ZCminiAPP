@@ -77,7 +77,7 @@ POSTBOX_ENDPOINT   — https://postbox.cloud.yandex.net (по умолчанию
 
 Проверка: письмо рендерится в файл (`cid:zarnica-hero` заменяется на `data:`-URL) и открывается
 в headless Chrome — у обеих карточек `getBoundingClientRect()` даёт одинаковые width/height/top
-(900/600/390 px: обе 300 px, переполнения нет). Скриншот области карточек — `letter_cards_600px.png`.
+(900/600/390 px: обе 300 px, переполнения нет). Превью и скриншот области карточек хранятся вне репозитория (tmp-ncrm/letter_preview.py, letter_cards_600px.png).
 
 ## Статус
 
