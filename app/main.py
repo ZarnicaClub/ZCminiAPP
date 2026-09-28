@@ -26,7 +26,7 @@ from shared.health import check_db, check_s3
 
 log = logging.getLogger("app.main")
 
-APP_VERSION = "13.01"
+APP_VERSION = "13.02"
 
 app = FastAPI(title="zc-app", version=APP_VERSION)
 
