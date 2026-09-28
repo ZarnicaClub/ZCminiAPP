@@ -81,6 +81,14 @@ function phoneLink(v) {
   return p ? "+" + p : "";
 }
 
+function phonePretty(v) {
+  const p = normPhone(v);
+  if (p.length === 11 && p[0] === "7") {
+    return `+7 (${p.slice(1, 4)}) ${p.slice(4, 7)}-${p.slice(7, 9)}-${p.slice(9, 11)}`;
+  }
+  return phoneLink(v);
+}
+
 function formatReceivedAt(value) {
   if (!value) return "";
   const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
@@ -395,9 +403,10 @@ async function openDetail(o) {
 
   detailEl.innerHTML = `
     <div class="detail-title">${esc(c.name || "Заказ")}</div>
+    <div class="detail-subtitle">Карточка заказа</div>
     <div class="detail-status">
       ${sum ? `<span class="amount-pill">${esc(sum)}</span>` : `<span class="status">${esc(o.status || "—")}</span>`}
-      ${p.transaction_id ? `<span class="txn-id">${esc(p.transaction_id)}</span>` : ""}
+      ${p.transaction_id ? `<span class="txn-id">Номер транзакции ${esc(p.transaction_id)}</span>` : ""}
     </div>
 
     <div class="key-block">
@@ -410,20 +419,22 @@ async function openDetail(o) {
         <div class="key-qty">${esc(e.qty)}</div>
       </div>` : ""}
       <div>
-        <div class="key-label">Игра</div>
+        <div class="key-label">Тариф</div>
         <div class="key-value">${esc(e.game || "—")}</div>
+      </div>
+      <div>
+        <div class="key-label">Дата</div>
+        <div class="key-value">${esc(formatEventDate(e.date) || "—")}</div>
       </div>
     </div>
 
     <div class="grid">
-      <div class="item"><div class="label">Дата</div><div class="value">${esc(formatEventDate(e.date) || "—")}</div></div>
       <div class="item item-copy" data-copy="${esc(o.order_id)}"><div class="label">Заказ</div><div class="value">${esc(o.order_id)}</div><span class="copy-icon">📋</span></div>
       <div class="item"><div class="label">Размещение</div><div class="value">${esc(e.tent || "—")}</div></div>
     </div>
 
     <div class="actions">
-      ${c.phone ? `<a class="action" href="tel:${esc(phoneLink(c.phone))}">📞 ${esc(phoneLink(c.phone))}</a>
-      <button class="action action-ghost" type="button" data-copy="${esc(phoneLink(c.phone))}">📋 Скопировать номер</button>` : ""}
+      ${c.phone ? `<button class="action" type="button" data-copy="${esc(phoneLink(c.phone))}">📞 ${esc(phonePretty(c.phone))}<span class="action-hint">📋</span></button>` : ""}
       ${c.email ? `<button class="action action-ghost" type="button" data-copy="${esc(c.email)}">✉️ ${esc(c.email)}</button>` : ""}
     </div>
 
@@ -470,7 +481,7 @@ async function openClientCard(clientId) {
     <div class="detail-subtitle">Карточка клиента</div>
 
     <div class="actions">
-      ${client.phone ? `<button class="action" type="button" data-copy="${esc(phoneLink(client.phone))}">📞 ${esc(phoneLink(client.phone))}</button>` : ""}
+      ${client.phone ? `<button class="action" type="button" data-copy="${esc(phoneLink(client.phone))}">📞 ${esc(phonePretty(client.phone))}<span class="action-hint">📋</span></button>` : ""}
       ${client.email ? `<button class="action" type="button" data-copy="${esc(client.email)}">✉️ ${esc(client.email)}</button>` : ""}
     </div>
 
