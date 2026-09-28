@@ -9,19 +9,38 @@
     /static/app.js, /static/style.css
     /api/*                  — API CRM (авторизация Telegram initData)
     /webhook/tilda/{secret} — приём заказов Tilda
-    /webhook/gsheets        — приём строк БСО из Google Apps Script
+    /webhook/gsheets        — приём строк БСО (совместимость; штатный путь — забор из таблицы)
+    /webhook/gsheets/pull   — ручной прогон забора БСО из Google-таблицы
     /healthz                — мгновенный ответ для проверки состояния платформой
     /healthz/deep           — глубокая проверка (БД + S3) для внешнего мониторинга
 """
+import asyncio
+import logging
+
 from fastapi import FastAPI
 
 from crm.app import app as crm_app
+from orders_webhook import gsheets_pull
 from orders_webhook.app import app as webhook_app
 from shared.health import check_db, check_s3
+
+log = logging.getLogger("app.main")
 
 APP_VERSION = "13.0"
 
 app = FastAPI(title="zc-app", version=APP_VERSION)
+
+
+@app.on_event("startup")
+async def _start_gsheets_pull() -> None:
+    """Фоновый забор БСО из Google-таблицы (включается переменной GSHEETS_PULL_ENABLED).
+
+    Раньше данные присылал Apps Script из таблицы; после удаления старого сервиса
+    поток развёрнут — читаем таблицу сами (см. orders_webhook/gsheets_pull.py).
+    """
+    gsheets_pull.log_config()
+    if gsheets_pull.enabled():
+        asyncio.create_task(gsheets_pull.loop_forever())
 
 
 # ВАЖНО: /healthz регистрируем ПЕРВЫМ — платформа опрашивает его каждые 30 секунд

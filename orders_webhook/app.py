@@ -4,7 +4,9 @@ import os
 import uuid
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 
+from orders_webhook import gsheets_pull
 from orders_webhook.service import upsert_bso, upsert_order
 from shared.gsheets import parse_gsheets_bso
 from shared.health import check_db, check_s3
@@ -68,7 +70,11 @@ async def tilda_webhook(secret: str, request: Request, background: BackgroundTas
 
 @app.post("/webhook/gsheets")
 async def gsheets_webhook(request: Request, x_gsheets_secret: str | None = Header(default=None)):
-    """Приём строки БСО из Google Apps Script (авторизация — заголовок X-Gsheets-Secret)."""
+    """Приём строки БСО из Google Apps Script (авторизация — заголовок X-Gsheets-Secret).
+
+    Оставлен для совместимости: штатный путь теперь — забор из таблицы
+    (`orders_webhook.gsheets_pull`), скрипт-отправитель не нужен.
+    """
     set_trace_id(uuid.uuid4().hex)
 
     if GSHEETS_SECRET and x_gsheets_secret != GSHEETS_SECRET:
@@ -94,3 +100,21 @@ async def gsheets_webhook(request: Request, x_gsheets_secret: str | None = Heade
         raise HTTPException(status_code=500, detail="internal error")
 
     return result
+
+
+@app.post("/webhook/gsheets/pull")
+async def gsheets_pull_now(x_gsheets_secret: str | None = Header(default=None)):
+    """Ручной прогон забора БСО из Google-таблицы (авторизация — тот же секрет).
+
+    Нужен для проверки: приходит то же, что делает фоновый цикл, но сразу и с ответом.
+    """
+    set_trace_id(uuid.uuid4().hex)
+
+    if GSHEETS_SECRET and x_gsheets_secret != GSHEETS_SECRET:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    try:
+        return await run_in_threadpool(gsheets_pull.pull_once)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("ручной прогон забора БСО упал")
+        raise HTTPException(status_code=500, detail=f"pull failed: {type(exc).__name__}")
