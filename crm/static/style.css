@@ -156,6 +156,20 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .close{position:absolute;right:12px;top:10px;border:0;background:none;font-size:30px;color:var(--muted)}
 .detail-title{font-size:24px;font-weight:750;padding-right:30px}
 .detail-status{margin:9px 0 18px}
+.detail-status{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.amount-pill{font-size:14px;font-weight:700;padding:6px 11px;border-radius:999px;background:var(--green-soft);color:var(--green-dark);white-space:nowrap}
+.txn-id{font-size:12px;color:#b3b4a9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sum-pill{font-size:13px;font-weight:700;padding:5px 9px;border-radius:999px;background:var(--green-soft);color:var(--green-dark);white-space:nowrap}
+.key-block{background:var(--bg);border-radius:14px;padding:14px 15px;display:grid;gap:12px;margin-bottom:9px}
+.key-label{font-size:11px;color:var(--muted)}
+.key-value{font-size:20px;font-weight:650;line-height:1.25;margin-top:3px}
+.key-qty{font-size:32px;font-weight:800;line-height:1.05;margin-top:2px}
+.item-copy{position:relative;cursor:pointer;padding-right:34px}
+.item-copy:active{background:var(--green-soft)}
+.item-copy .copy-icon{position:absolute;right:11px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--green)}
+button.action.action-ghost{background:#fff;color:var(--green-dark);border:1px solid var(--line)}
+.copy-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#242720;color:#fff;font-size:13px;padding:9px 14px;border-radius:10px;opacity:0;transition:opacity .18s;pointer-events:none;z-index:99}
+.copy-toast.on{opacity:.94}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 .item{background:var(--bg);border-radius:12px;padding:11px}
 .label{font-size:11px;color:var(--muted)}

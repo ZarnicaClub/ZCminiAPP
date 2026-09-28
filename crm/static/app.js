@@ -47,10 +47,15 @@ function paid(o) {
   return String(o.status || "").toLowerCase() === "paid";
 }
 
-function money(o) {
-  if (o.payment?.amount == null) return "—";
-  return Number(o.payment.amount).toLocaleString("ru-RU") + " " +
-         (o.payment.currency || "RUB");
+function statusOrAmount(o) {
+  if (paid(o) && o.payment?.amount != null) return rub(o);
+  return String(o.status || "—");
+}
+
+function sessionLabel(session) {
+  const s = String(session || "").trim().replace(/^[-\s–—•]+/, "").replace(/[\s;.]+$/, "");
+  if (!s) return "—";
+  return s.replace(/\s+с\s+/i, " · с ");
 }
 
 function rub(o) {
@@ -261,6 +266,22 @@ function callCard(call, options) {
   `;
 }
 
+let copyToastTimer = null;
+
+function showCopyToast(text) {
+  let el = document.getElementById("copyToast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "copyToast";
+    el.className = "copy-toast";
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.add("on");
+  clearTimeout(copyToastTimer);
+  copyToastTimer = setTimeout(() => el.classList.remove("on"), 1400);
+}
+
 async function copyText(text, btn) {
   try {
     if (navigator.clipboard && window.isSecureContext) {
@@ -277,9 +298,14 @@ async function copyText(text, btn) {
       ta.remove();
     }
     if (btn) {
-      const old = btn.textContent;
-      btn.textContent = "✓ Скопировано";
-      setTimeout(() => { btn.textContent = old; }, 1500);
+      if (btn.tagName === "BUTTON" || btn.tagName === "A") {
+        if (!btn.dataset.oldText) btn.dataset.oldText = btn.textContent;
+        btn.textContent = "✓ Скопировано";
+        clearTimeout(btn._copyTimer);
+        btn._copyTimer = setTimeout(() => { btn.textContent = btn.dataset.oldText; }, 1500);
+      } else {
+        showCopyToast("Скопировано: " + text);
+      }
     }
   } catch (e) {
     // буфер обмена недоступен — оставляем как есть
@@ -289,6 +315,16 @@ async function copyText(text, btn) {
 function wireCopyButtons() {
   detailEl.querySelectorAll("[data-copy]").forEach(btn => {
     btn.addEventListener("click", () => copyText(btn.dataset.copy, btn));
+    if (btn.tagName !== "BUTTON" && btn.tagName !== "A") {
+      btn.setAttribute("role", "button");
+      btn.setAttribute("tabindex", "0");
+      btn.addEventListener("keydown", e => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          copyText(btn.dataset.copy, btn);
+        }
+      });
+    }
   });
 }
 
@@ -313,7 +349,7 @@ function scheduleCard(o) {
         <span class="sch-name">${name}</span>
         ${phone ? `<a class="sch-phone" href="tel:${esc(phoneLink(o.customer.phone))}">📞</a>` : ""}
       </div>
-      <div class="sch-row3">${esc(si.time)} · ${esc(o.status || "—")}</div>
+      <div class="sch-row3">${esc(si.time)} · ${esc(statusOrAmount(o))}</div>
     </article>
   `;
 }
@@ -323,14 +359,14 @@ function orderCard(o) {
     <article class="card" data-id="${esc(o.order_id)}">
       <div class="topline">
         <div class="date">📅 ${esc(formatEventDate(o.event?.date) || "Дата не указана")}</div>
-        <div class="status">${esc(o.status || "—")}${paid(o) && o.payment?.amount != null ? ` · ${esc(money(o))}` : ""}</div>
+        <div class="${paid(o) && o.payment?.amount != null ? "sum-pill" : "status"}">${esc(statusOrAmount(o))}</div>
       </div>
       <div class="card-mainline">
         <div class="name">${esc(o.customer?.name || "Без имени")}</div>
         ${o.event?.qty ? `<div class="players-count">👥 <span>${esc(o.event.qty)}</span></div>` : ""}
       </div>
       <div class="meta">
-        🕒 ${esc(o.event?.session || "Сеанс не указан")}
+        🕒 ${esc(o.event?.session ? sessionLabel(o.event.session) : "Сеанс не указан")}
       </div>
       ${o.event?.game ? `<div class="game">🎯 ${esc(o.event.game)}</div>` : ""}
       ${o.event?.tent ? `<div class="meta">🏕 ${esc(o.event.tent)}</div>` : ""}
@@ -355,25 +391,40 @@ async function openDetail(o) {
   const c = o.customer || {};
   const e = o.event || {};
   const p = o.payment || {};
+  const sum = paid(o) && p.amount != null ? rub(o) : "";
 
   detailEl.innerHTML = `
     <div class="detail-title">${esc(c.name || "Заказ")}</div>
-    <div class="detail-status"><span class="status">${esc(o.status || "—")}</span></div>
+    <div class="detail-status">
+      ${sum ? `<span class="amount-pill">${esc(sum)}</span>` : `<span class="status">${esc(o.status || "—")}</span>`}
+      ${p.transaction_id ? `<span class="txn-id">${esc(p.transaction_id)}</span>` : ""}
+    </div>
+
+    <div class="key-block">
+      <div>
+        <div class="key-label">Сеанс</div>
+        <div class="key-value">${esc(sessionLabel(e.session))}</div>
+      </div>
+      ${e.qty ? `<div>
+        <div class="key-label">Игроков</div>
+        <div class="key-qty">${esc(e.qty)}</div>
+      </div>` : ""}
+      <div>
+        <div class="key-label">Игра</div>
+        <div class="key-value">${esc(e.game || "—")}</div>
+      </div>
+    </div>
 
     <div class="grid">
-      <div class="item"><div class="label">Заказ</div><div class="value">#${esc(o.order_id)}</div></div>
       <div class="item"><div class="label">Дата</div><div class="value">${esc(formatEventDate(e.date) || "—")}</div></div>
-      <div class="item"><div class="label">Сеанс</div><div class="value">${esc(e.session || "—")}</div></div>
-      <div class="item"><div class="label">Игроков</div><div class="value">${esc(e.qty || "—")}</div></div>
-      <div class="item"><div class="label">Игра</div><div class="value">${esc(e.game || "—")}</div></div>
+      <div class="item item-copy" data-copy="${esc(o.order_id)}"><div class="label">Заказ</div><div class="value">${esc(o.order_id)}</div><span class="copy-icon">📋</span></div>
       <div class="item"><div class="label">Размещение</div><div class="value">${esc(e.tent || "—")}</div></div>
-      <div class="item"><div class="label">Оплата</div><div class="value">${money(o)}</div></div>
-      <div class="item"><div class="label">Транзакция</div><div class="value">${esc(p.transaction_id || "—")}</div></div>
     </div>
 
     <div class="actions">
-      ${c.phone ? `<a class="action" href="tel:${esc(phoneLink(c.phone))}">📞 ${esc(phoneLink(c.phone))}</a>` : ""}
-      ${c.email ? `<button class="action" type="button" data-copy="${esc(c.email)}">✉️ ${esc(c.email)}</button>` : ""}
+      ${c.phone ? `<a class="action" href="tel:${esc(phoneLink(c.phone))}">📞 ${esc(phoneLink(c.phone))}</a>
+      <button class="action action-ghost" type="button" data-copy="${esc(phoneLink(c.phone))}">📋 Скопировать номер</button>` : ""}
+      ${c.email ? `<button class="action action-ghost" type="button" data-copy="${esc(c.email)}">✉️ ${esc(c.email)}</button>` : ""}
     </div>
 
     <section class="calls-section">
@@ -441,7 +492,7 @@ async function openClientCard(clientId) {
     ordersBox.innerHTML = orders.map(o => `
       <article class="order-mini" data-id="${esc(o.order_id)}">
         <div class="order-mini-top">
-          <span class="order-mini-id">#${esc(o.order_id)}</span>
+          <span class="order-mini-id">${esc(o.order_id)}</span>
           <span class="order-mini-date">${esc(formatEventDate(o.event?.date) || "—")}</span>
         </div>
       </article>
@@ -669,7 +720,7 @@ function bsoCard(b) {
       <div class="bso-body" hidden>
         ${nameEl}
         <div class="bso-details">
-          <div class="bso-row"><span>Заказ</span><span>#${esc(b.order_id || "—")}</span></div>
+          <div class="bso-row"><span>Заказ</span><span>${esc(b.order_id || "—")}</span></div>
           <div class="bso-row"><span>Игроков (факт)</span><span>${esc(b.players_fact ?? "—")}</span></div>
           <div class="bso-row"><span>Зона отдыха</span><span>${fmtMoney(b.rest_zone_amount)}</span></div>
         </div>
