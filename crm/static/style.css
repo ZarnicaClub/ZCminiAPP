@@ -7,9 +7,13 @@
   --green:#708f3f;
   --green-dark:#435c27;
   --green-soft:#e7eddc;
+  --ease-out:cubic-bezier(.23,1,.32,1);
 }
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;
+-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+button,a,[role="button"],.sch-card,.card,.order-mini,.call-card-linked,.more-item,.item-copy{
+touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 [hidden]{display:none !important}
 body{margin:0;background:var(--bg);color:var(--text);
 font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -22,15 +26,16 @@ padding-right:max(14px,env(safe-area-inset-right))}
 h1{font-size:clamp(22px,7vw,30px);margin:4px 0 15px}
 
 /* ---------- стартовый экран ---------- */
-.screen-start{min-height:calc(100vh - 36px);display:flex;flex-direction:column}
+.screen-start{min-height:calc(100vh - 36px);min-height:calc(100svh - 36px);display:flex;flex-direction:column}
 .start-header{padding-top:12px}
 .start-title{font-size:clamp(34px,11vw,44px);margin:2px 0 0;letter-spacing:.02em}
 .start-sub{font-size:13px;color:var(--muted);margin-top:2px}
 .start-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:auto 0;padding:28px 0}
 .start-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
 aspect-ratio:1;border:1px solid var(--line);background:var(--card);border-radius:20px;
-font-size:17px;font-weight:700;color:var(--text);cursor:pointer;min-height:44px}
-.start-btn:active{transform:scale(.98)}
+font-size:17px;font-weight:700;color:var(--text);cursor:pointer;min-height:44px;
+transition:transform 110ms var(--ease-out)}
+.start-btn:active{transform:scale(.97)}
 .start-ico{font-size:clamp(28px,9vw,34px);line-height:1}
 .start-btn-wide{grid-column:1 / -1;flex-direction:row;aspect-ratio:auto;min-height:58px;gap:12px;font-size:18px}
 
@@ -51,7 +56,8 @@ font-size:19px;padding:10px 13px;color:var(--muted);min-height:44px}
 font-size:15px;font-weight:700;padding:12px 14px;white-space:nowrap;cursor:pointer;flex:0 0 auto;min-height:44px}
 
 /* ---------- неделя (горизонтальный календарь) ---------- */
-.week{display:flex;align-items:stretch;gap:6px;overflow-x:auto;padding-bottom:4px}
+.week{display:flex;align-items:stretch;gap:6px;overflow-x:auto;padding-bottom:4px;
+overscroll-behavior-x:contain}
 .week-arrow{border:0;background:none;font-size:24px;color:var(--muted);padding:0;
 flex:0 0 auto;min-width:40px;min-height:44px}
 .week-day{flex:1 1 0;min-width:42px;border:1px solid var(--line);background:var(--card);
@@ -82,8 +88,9 @@ border-radius:12px;padding:10px 12px}
 /* ---------- список расписания ---------- */
 .schedule-list{display:grid;gap:10px}
 .sch-card{border:1px solid var(--line);border-radius:16px;padding:14px 14px 12px;
-background:var(--card);border-left:5px solid #9aa08f;cursor:pointer}
-.sch-card:active{transform:scale(.995)}
+background:var(--card);border-left:5px solid #9aa08f;cursor:pointer;
+transition:transform 110ms var(--ease-out)}
+.sch-card:active{transform:scale(.98)}
 .sch-row1{display:flex;align-items:baseline;gap:8px 10px;flex-wrap:wrap}
 .sch-period{font-size:clamp(16px,5vw,20px);font-weight:800;color:var(--green-dark);flex:0 0 auto}
 .sch-game{flex:1 1 auto;min-width:0;font-size:clamp(15px,4.2vw,17px);font-weight:700;line-height:1.2}
@@ -108,7 +115,8 @@ padding:8px 14px;font-size:14px;cursor:pointer;min-height:38px}
 
 /* ---------- фильтр-полоса дат (ползунок) ---------- */
 .day-strip-wrap{margin:10px 0}
-.day-strip{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 6px;-webkit-overflow-scrolling:touch}
+.day-strip{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 6px;-webkit-overflow-scrolling:touch;
+overscroll-behavior-x:contain}
 .day-chip{flex:0 0 auto;min-width:54px;border:1px solid var(--line);background:var(--card);border-radius:12px;
   padding:8px 6px 7px;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;min-height:44px}
 .day-chip-dow{font-size:10px;color:var(--muted);text-transform:uppercase}
@@ -132,8 +140,9 @@ border:0;background:none;font-size:11px;color:var(--muted);cursor:pointer;min-he
 /* ---------- общие карточки (Заказы/Клиенты) ---------- */
 .summary{font-size:13px;color:var(--muted);margin:12px 2px}
 .orders{display:grid;gap:10px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:17px;padding:15px}
-.card:active{transform:scale(.99)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:17px;padding:15px;
+transition:transform 110ms var(--ease-out)}
+.card:active{transform:scale(.98)}
 .topline{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 .card-mainline{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px}
 .players-count{font-size:23px;font-weight:800;line-height:1;text-align:right;white-space:nowrap}
@@ -189,15 +198,30 @@ button.action{border:0;cursor:pointer;font:inherit;width:100%}
 .call-audio{width:100%;margin-top:10px}
 .call-unavailable{margin-top:10px;opacity:.65;font-size:13px}
 .call-client{font-weight:650;color:var(--green-dark);margin-top:6px}
-.call-card-linked{cursor:pointer}
-.call-card-linked:active{transform:scale(.99)}
+.call-card-linked{cursor:pointer;transition:transform 110ms var(--ease-out)}
+.call-card-linked:active{transform:scale(.98)}
 .detail-subtitle{font-size:15px;color:var(--muted);margin-top:4px;padding-right:30px}
 .orders-mini{display:grid;gap:8px}
-.order-mini{padding:10px 12px;border:1px solid var(--line);border-radius:12px;cursor:pointer}
-.order-mini:active{transform:scale(.99)}
+.order-mini{padding:10px 12px;border:1px solid var(--line);border-radius:12px;cursor:pointer;
+transition:transform 110ms var(--ease-out)}
+.order-mini:active{transform:scale(.98)}
 .order-mini-top{display:flex;justify-content:space-between;gap:10px}
 .order-mini-id{font-weight:700}
 .order-mini-date{color:var(--muted);white-space:nowrap}
+
+/* ---------- отклик на нажатие у элементов, где его не было (29.09.2026) ---------- */
+.chip,.cta-btn,.month-arrow,.icon-btn,.month-label,.nav-item,.more-item{
+transition:background 110ms var(--ease-out),color 110ms var(--ease-out)}
+.chip:active,.month-arrow:active,.icon-btn:active,.month-label:active{background:var(--green-soft)}
+.cta-btn:active{background:var(--green-dark)}
+.nav-item:active{color:var(--green-dark)}
+
+/* ---------- уменьшенное движение: убираем только движение, не обратную связь ---------- */
+@media (prefers-reduced-motion: reduce){
+  .sch-card,.card,.start-btn,.call-card-linked,.order-mini,.bso-chevron{transition:none}
+  .sch-card:active,.card:active,.start-btn:active,.call-card-linked:active,.order-mini:active{transform:none}
+  .copy-toast{transition-duration:60ms}
+}
 
 .header-row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 .weekend{text-align:right;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px}
