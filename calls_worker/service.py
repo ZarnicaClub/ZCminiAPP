@@ -1,10 +1,16 @@
-"""calls-worker: цикл обработки (advisory lock, матчинг, S3, Calls)."""
+"""calls-worker: цикл обработки (advisory lock, матчинг, S3, Calls).
+
+Цикл больше не перечитывает всё окно: `fetch_new_messages` отдаёт только новое
+(по закладке — см. `calls_worker/state.py`), а тела писем качаются лишь для тех
+UID, которых нет в таблице `calls`.
+"""
 import io
 import json
 import logging
+import time
 from datetime import datetime, timezone
 
-from calls_worker.imap import fetch_new_messages
+from calls_worker.imap import advance_cursor, fetch_new_messages
 from calls_worker.parser import match_status, mp3_duration
 from shared.db import pool
 from shared.s3 import build_s3_key, s3_client
@@ -12,16 +18,25 @@ from shared.s3 import build_s3_key, s3_client
 log = logging.getLogger("calls_worker.service")
 LOCK_ID = 783011
 
+# Счётчики накопительные с момента запуска процесса (приросты за цикл — в last_cycle).
 STATUS = {
     "service": "calls-worker",
     "last_cycle_at": None,
-    "processed": 0,
-    "inserted": 0,
-    "matched": 0,
-    "unmatched": 0,
-    "ambiguous": 0,
+    "mode": None,          # cursor — по закладке; window — по суточному окну
+    "last_uid": None,      # докуда разобрано (закладка)
+    "selected": 0,         # UID в выборке
+    "downloaded": 0,       # тел писем скачано
+    "skipped": 0,          # уже было в базе — тело не качали
+    "processed": 0,        # письма, взятые в разбор
+    "inserted": 0,         # записано в таблицу calls
+    "matched": 0,          # привязано к заказу
+    "unmatched": 0,        # заказ по телефону не найден
+    "ambiguous": 0,        # телефон найден у нескольких заказов
+    "duplicates": 0,       # такой MP3/письмо уже в базе
+    "malformed": 0,        # письмо не той структуры (нет MP3 или их несколько)
     "errors": 0,
     "last_error": None,
+    "last_cycle": {},
 }
 
 
@@ -53,17 +68,20 @@ def _order_ids_for_phone(phone):
 
 
 def process_one(msg, s3, bucket, existing_eids, existing_hashes):
-    """Обрабатывает одно письмо; возвращает dict с результатом."""
+    """Обрабатывает одно письмо.
+
+    action: inserted — записали в базу; skipped_duplicate — такое уже есть;
+    malformed — структура письма не та (в базу не пишется, закладка пройдёт мимо);
+    error — файл не разобрался (тоже постоянное, повторов не требуем).
+    """
     parsed = msg["parsed"]
     atts = msg["attachments"]
-    rec = {
-        "email_id": msg["email_id"], "status": "unmatched",
-        "action": None, "error": None,
-    }
+    rec = {"email_id": msg["email_id"], "status": None, "action": None, "error": None}
 
     if len(atts) != 1:
-        rec["status"] = "ambiguous" if len(atts) > 1 else "unmatched"
-        rec["error"] = "expected exactly one MP3"
+        rec["action"] = "malformed"
+        rec["error"] = ("вложений больше одного" if len(atts) > 1
+                        else "в письме нет MP3")
         return rec
 
     att = atts[0]
@@ -74,6 +92,7 @@ def process_one(msg, s3, bucket, existing_eids, existing_hashes):
     try:
         dur = mp3_duration(att["payload"])
     except Exception as e:  # noqa: BLE001
+        rec["action"] = "error"
         rec["error"] = f"mp3 duration: {e}"
         return rec
 
@@ -130,23 +149,78 @@ def run_once():
             lock_conn.execute("SELECT pg_advisory_unlock(%s)", (LOCK_ID,))
 
 
-def _run_cycle():
-    STATUS["last_cycle_at"] = datetime.now(timezone.utc).isoformat()
-    messages = fetch_new_messages()
+def _count(cycle, key, n=1):
+    cycle[key] = cycle.get(key, 0) + n
 
-    email_ids = {m["email_id"] for m in messages}
-    hashes = {a["sha256"] for m in messages for a in m["attachments"]}
+
+def _run_cycle():
+    started = time.time()
+    STATUS["last_cycle_at"] = datetime.now(timezone.utc).isoformat()
+
+    sel = fetch_new_messages()
+    STATUS["mode"] = sel.mode
+    STATUS["selected"] += len(sel.uids)
+    STATUS["downloaded"] += len(sel.to_download)
+    STATUS["skipped"] += sel.skipped_known
+
+    cycle = {
+        "mode": sel.mode,
+        "selected": len(sel.uids),
+        "downloaded": len(sel.to_download),
+        "skipped": sel.skipped_known,
+        "in_folder": sel.total_in_folder,
+        "processed": 0, "inserted": 0, "matched": 0, "unmatched": 0,
+        "ambiguous": 0, "duplicates": 0, "malformed": 0, "errors": 0,
+    }
+
+    email_ids = {m["email_id"] for m in sel.messages}
+    hashes = {a["sha256"] for m in sel.messages for a in m["attachments"]}
     eids, hs = _existing(email_ids, hashes)
 
     s3, bucket = s3_client()
-    for m in messages:
-        rec = process_one(m, s3, bucket, eids, hs)
+    for m in sel.messages:
+        try:
+            rec = process_one(m, s3, bucket, eids, hs)
+        except Exception as e:  # noqa: BLE001 — сбой (БД/S3) не должен терять письмо
+            err = f"{type(e).__name__}: {e}"
+            STATUS["errors"] += 1
+            STATUS["last_error"] = err
+            _count(cycle, "errors")
+            if sel.mode == "cursor":
+                sel.failed.append(int(m["email_id"]))
+            log.exception("письмо %s не обработано — повторю в следующем цикле: %s",
+                          m["email_id"], e)
+            continue
+
         STATUS["processed"] += 1
-        if rec["action"] == "inserted":
+        _count(cycle, "processed")
+        action = rec["action"]
+        if action == "inserted":
             STATUS["inserted"] += 1
+            _count(cycle, "inserted")
+            if rec["status"] in ("matched", "unmatched", "ambiguous"):
+                STATUS[rec["status"]] += 1
+                _count(cycle, rec["status"])
+        elif action == "skipped_duplicate":
+            STATUS["duplicates"] += 1
+            _count(cycle, "duplicates")
+        elif action == "malformed":
+            STATUS["malformed"] += 1
+            _count(cycle, "malformed")
         if rec.get("error"):
             STATUS["errors"] += 1
             STATUS["last_error"] = rec["error"]
-        if rec["status"] in STATUS:
-            STATUS[rec["status"]] += 1
-    log.info("cycle done: %s messages", len(messages))
+            _count(cycle, "errors")
+
+    new_cursor = advance_cursor(sel)
+    STATUS["last_uid"] = new_cursor if new_cursor is not None else sel.cursor_before
+
+    STATUS["last_cycle"] = {**cycle, "seconds": round(time.time() - started, 1)}
+
+    log.info(
+        "цикл за %.1f с (%s): в выборке %s, к скачиванию %s, скачано %s, уже было %s, "
+        "сохранено %s, привязано %s, без пары %s, брак %s, ошибок %s, закладка %s",
+        cycle["seconds"], sel.mode, len(sel.uids), len(sel.to_download),
+        cycle["processed"], sel.skipped_known, cycle["inserted"], cycle["matched"],
+        cycle["unmatched"], cycle["malformed"], cycle["errors"], STATUS["last_uid"],
+    )

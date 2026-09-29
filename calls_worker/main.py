@@ -11,6 +11,7 @@ import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+from calls_worker import state
 from calls_worker.service import STATUS, run_once
 from shared.logging_config import setup_logging
 
@@ -80,18 +81,24 @@ def main():
     once = "--once" in sys.argv
 
     log.info(
-        "calls-worker запущен%s: интервал %s c, health-порт %s, окно разбора писем %s ч, ящик %s",
+        "calls-worker запущен%s: интервал %s c, health-порт %s, окно разбора писем %s ч, ящик %s, закладка %s",
         " (разовый прогон)" if once else "",
         INTERVAL, HEALTH_PORT,
         os.getenv("PARSER_LOOKBACK_HOURS") or "24",
         os.getenv("MAIL_USERNAME") or "(не задан)",
+        state.state_path(),
     )
 
     if once:
         try:
             run_once()
-            log.info("разовый прогон завершён: писем %s, сохранено %s, без пары %s, ошибок %s",
-                     STATUS["processed"], STATUS["inserted"], STATUS["unmatched"], STATUS["errors"])
+            c = STATUS.get("last_cycle") or {}
+            log.info(
+                "разовый прогон завершён (%s): в выборке %s, к скачиванию %s, скачано %s, "
+                "сохранено %s, без пары %s, ошибок %s, закладка %s",
+                c.get("mode"), c.get("selected"), c.get("downloaded"), c.get("processed"),
+                c.get("inserted"), c.get("unmatched"), c.get("errors"), STATUS.get("last_uid"),
+            )
         except Exception as e:  # noqa: BLE001
             STATUS["errors"] += 1
             STATUS["last_error"] = str(e)
@@ -104,19 +111,8 @@ def main():
 
     last_alert = 0.0
     while True:
-        started = time.time()
-        before = dict(STATUS)
         try:
             run_once()
-            log.info(
-                "цикл за %.1f с: писем %s, сохранено %s, привязано %s, без пары %s, ошибок цикла %s",
-                time.time() - started,
-                STATUS["processed"] - before["processed"],
-                STATUS["inserted"] - before["inserted"],
-                STATUS["matched"] - before["matched"],
-                STATUS["unmatched"] - before["unmatched"],
-                STATUS["errors"] - before["errors"],
-            )
         except Exception as e:  # noqa: BLE001
             STATUS["errors"] += 1
             STATUS["last_error"] = str(e)

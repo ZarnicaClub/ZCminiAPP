@@ -19,6 +19,7 @@ packages/
 
 # Runtime artifacts
 reports/
+var/
 *.log
 .tmp/
 .packages/
