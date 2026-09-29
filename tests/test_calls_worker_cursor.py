@@ -13,7 +13,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from calls_worker import imap, state  # noqa: E402
+from calls_worker import imap, service, state  # noqa: E402
 from calls_worker.parser import parse_message  # noqa: E402
 from calls_worker.service import process_one  # noqa: E402
 
@@ -194,6 +194,36 @@ def test_broken_mp3_does_not_hold_cursor(monkeypatch):
     assert rec["action"] == "error" and rec["status"] is None
     assert sel.failed == []
     assert saved == [(101, 1)]
+
+
+def test_cycle_runs_and_logs(monkeypatch, caplog):
+    """Цикл целиком — с подменёнными ящиком, базой и S3: счётчики и строка лога."""
+    sel = imap.Selection()
+    sel.mode = "cursor"
+    sel.uids = [101, 102]
+    sel.to_download = [102]
+    sel.messages = []
+    sel.skipped_known = 1
+    sel.uidvalidity = 1
+    sel.uidvalidity_before = 1
+    sel.max_uid = 102
+    sel.cursor_before = 100
+    monkeypatch.setattr(service, "fetch_new_messages", lambda: sel)
+    monkeypatch.setattr(service, "advance_cursor", lambda s: 102)
+    monkeypatch.setattr(service, "_existing", lambda eids, hs: (set(), set()))
+    monkeypatch.setattr(service, "s3_client", lambda: (object(), "bucket"))
+    for key in ("selected", "downloaded", "skipped", "processed", "inserted", "errors"):
+        service.STATUS[key] = 0
+
+    with caplog.at_level("INFO"):
+        service._run_cycle()
+
+    assert service.STATUS["last_cycle"]["mode"] == "cursor"
+    assert service.STATUS["last_cycle"]["selected"] == 2
+    assert service.STATUS["last_cycle"]["downloaded"] == 1
+    assert service.STATUS["last_uid"] == 102
+    assert "к скачиванию 1" in caplog.text
+    assert "закладка 102" in caplog.text
 
 
 def test_state_file_roundtrip(monkeypatch, tmp_path):

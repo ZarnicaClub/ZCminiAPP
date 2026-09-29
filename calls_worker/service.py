@@ -215,12 +215,13 @@ def _run_cycle():
     new_cursor = advance_cursor(sel)
     STATUS["last_uid"] = new_cursor if new_cursor is not None else sel.cursor_before
 
-    STATUS["last_cycle"] = {**cycle, "seconds": round(time.time() - started, 1)}
+    cycle["seconds"] = round(time.time() - started, 1)
+    STATUS["last_cycle"] = cycle
 
     log.info(
         "цикл за %.1f с (%s): в выборке %s, к скачиванию %s, скачано %s, уже было %s, "
         "сохранено %s, привязано %s, без пары %s, брак %s, ошибок %s, закладка %s",
-        cycle["seconds"], sel.mode, len(sel.uids), len(sel.to_download),
-        cycle["processed"], sel.skipped_known, cycle["inserted"], cycle["matched"],
+        cycle["seconds"], cycle["mode"], cycle["selected"], cycle["downloaded"],
+        cycle["processed"], cycle["skipped"], cycle["inserted"], cycle["matched"],
         cycle["unmatched"], cycle["malformed"], cycle["errors"], STATUS["last_uid"],
     )
