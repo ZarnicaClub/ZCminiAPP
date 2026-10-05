@@ -77,11 +77,10 @@
       <h1>Заказы</h1>
     </header>
     <div class="filter-row" id="ordersFilterRow">
-      <button class="chip active" data-ofilter="upcoming">Ближайшие</button>
-      <button class="chip" data-ofilter="all">Все</button>
-      <button class="chip" data-ofilter="date">Выбор даты</button>
+      <button class="chip active" data-ofilter="recent">Ближайшие</button>
+      <button class="chip" data-ofilter="date">Найти по дате</button>
     </div>
-    <div id="ordersDateStrip" class="day-strip-wrap" hidden></div>
+    <div id="ordersCalendar" class="cal-wrap" hidden></div>
     <div id="ordersSummary" class="summary">Загрузка…</div>
     <section id="ordersList" class="orders"></section>
   </section>

@@ -125,6 +125,10 @@ overscroll-behavior-x:contain}
 .day-chip.active{background:var(--green);border-color:var(--green)}
 .day-chip.active .day-chip-dow,.day-chip.active .day-chip-num{color:#fff}
 .day-chip.all{min-width:auto;font-size:14px;font-weight:700;padding:8px 14px}
+/* даты поступлений (экран «Заказы»): подпись месяца и число поступлений на чипе */
+.strip-month{flex:0 0 auto;align-self:center;padding:0 2px 0 6px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.day-chip-cnt{font-size:9px;color:var(--muted);line-height:1}
+.day-chip.active .day-chip-cnt{color:#fff}
 
 /* ---------- нижняя навигация ---------- */
 .bottom-nav{position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:720px;
@@ -171,11 +175,9 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .key-label{font-size:11px;color:var(--muted)}
 .key-value{font-size:20px;font-weight:650;line-height:1.25;margin-top:3px}
 .key-qty{font-size:32px;font-weight:800;line-height:1.05;margin-top:2px}
-.item-copy{position:relative;cursor:pointer;padding-right:34px}
+.item-copy{position:relative;cursor:pointer}
 .item-copy:active{background:var(--green-soft)}
-.item-copy .copy-icon{position:absolute;right:11px;top:50%;transform:translateY(-50%);font-size:15px;color:var(--green)}
 button.action.action-ghost{background:#fff;color:var(--green-dark);border:1px solid var(--line)}
-.action-hint{font-size:14px;opacity:.85;margin-left:6px}
 .copy-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#242720;color:#fff;font-size:13px;padding:9px 14px;border-radius:10px;opacity:0;transition:opacity .18s;pointer-events:none;z-index:99}
 .copy-toast.on{opacity:.94}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
@@ -287,3 +289,27 @@ transition:background 110ms var(--ease-out),color 110ms var(--ease-out)}
   .players-count{font-size:20px}
   .players-count span{font-size:22px}
 }
+
+/* календарь «Найти по дате» (экран «Заказы») — дни с предоплатами помечены точкой */
+.cal-wrap{margin:10px 0 4px}
+.cal-head{display:flex;align-items:center;margin-bottom:8px}
+.cal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px}
+.cal-dow span{font-size:10px;color:var(--muted);text-transform:uppercase;text-align:center}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal-day{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;
+ min-height:44px;border:1px solid var(--line);background:var(--card);border-radius:12px;padding:4px 0 6px;
+ font-size:15px;font-weight:700;color:var(--text)}
+.cal-day.off{border-color:transparent;background:transparent;color:#c9cabf;font-weight:500}
+.cal-day.empty{min-height:44px}
+.cal-day.today .cal-num{color:var(--green)}
+.cal-day.active{background:var(--green);border-color:var(--green)}
+.cal-day.active .cal-num{color:#fff}
+.month-arrow:disabled{opacity:.35}
+.cal-dot{width:6px;height:6px;border-radius:50%;margin-top:2px;background:transparent}
+.cal-dot.has{background:var(--green)}
+.cal-day.active .cal-dot.has{background:#fff}
+/* БСО в карточке заказа: блок появляется сам, когда бланк заведён */
+.bso-inline{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:12px;display:grid;gap:6px}
+.bso-inline-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding-bottom:7px;border-bottom:1px dashed var(--line)}
+.bso-inline-num{font-size:16px;font-weight:700;color:var(--text)}
+.bso-inline-sum{font-size:19px;font-weight:800;color:var(--green-dark);white-space:nowrap}

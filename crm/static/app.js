@@ -10,7 +10,8 @@ const state = {
   clients: [],
   bso: [],
   view: "start",
-  ordersFilter: "upcoming",
+  ordersFilter: "recent",
+  ordersMonth: null,
   ordersDate: null,
   selectedDate: null,
   callsDate: null,
@@ -88,11 +89,29 @@ function phonePretty(v) {
   return phoneLink(v);
 }
 
+/* --- время поступления: в базе UTC, показываем и группируем по Москве --- */
+const MSK_OFFSET_MS = 3 * 3600 * 1000;
+
+function parseTs(value) {
+  if (!value) return null;
+  const s = String(value).trim().replace(" ", "T");
+  const d = new Date(/(Z|[+-]\d{2}(?::?\d{2})?)$/.test(s) ? s : s + "Z");
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function mskDate(value) {
+  const d = parseTs(value);
+  if (!d) return "";
+  return new Date(d.getTime() + MSK_OFFSET_MS).toISOString().slice(0, 10);
+}
+
 function formatReceivedAt(value) {
   if (!value) return "";
-  const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
-  if (m) return `${m[3]}.${m[2]}.${m[1].slice(-2)} · ${m[4]}:${m[5]}`;
-  return String(value);
+  const d = parseTs(value);
+  if (!d) return String(value);
+  const s = new Date(d.getTime() + MSK_OFFSET_MS);
+  const p = n => String(n).padStart(2, "0");
+  return `${p(s.getUTCDate())}.${p(s.getUTCMonth() + 1)}.${String(s.getUTCFullYear()).slice(-2)} · ${p(s.getUTCHours())}:${p(s.getUTCMinutes())}`;
 }
 
 function formatCallDatetime(value) {
@@ -113,24 +132,39 @@ function formatEventDate(value) {
   return text;
 }
 
-function isUpcoming(o) {
-  if (!o.event?.date) return false;
-  const text = String(o.event.date);
-  let d;
-  let m = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) {
-    d = new Date(+m[1], +m[2]-1, +m[3]);
-  } else {
-    m = text.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
-    if (!m) return true;
-    d = new Date(+m[3], +m[2]-1, +m[1]);
-  }
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  const end = new Date(today);
-  end.setDate(end.getDate()+14);
-  return d >= today && d <= end;
+/* ---------- заказы: порядок и фильтр по дате поступления оплаты ---------- */
+
+function receiptTime(o) {
+  const d = parseTs(o?.received_at);
+  return d ? d.getTime() : 0;
 }
+
+function sortByReceipt(list) {
+  return [...list].sort((a, b) => {
+    const ta = receiptTime(a), tb = receiptTime(b);
+    if (ta !== tb) return tb - ta; // новые сверху
+    return String(b.order_id).localeCompare(String(a.order_id));
+  });
+}
+
+function receiptDays() {
+  const set = new Set();
+  state.orders.forEach(o => { const d = mskDate(o.received_at); if (d) set.add(d); });
+  return [...set].sort().reverse(); // свежие слева
+}
+
+function latestReceiptDay() {
+  return receiptDays()[0] || "";
+}
+
+function formatReceiptDay(iso) {
+  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return String(iso || "");
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  return `${m[3]}.${m[2]}.${m[1]}, ${WEEKDAYS_RU[d.getDay()]}`;
+}
+
+
 
 /* ---------- классификация игры / сеанса (дизайн, без БД) ---------- */
 
@@ -384,6 +418,30 @@ function orderCard(o) {
 
 /* ---------- детали ---------- */
 
+/* БСО в карточке заказа: появляется сам, когда бланк уже заведён */
+async function loadOrderBso(orderId) {
+  const slot = document.getElementById("orderBsoSlot");
+  if (!slot) return;
+  try {
+    const r = await fetch(`/api/orders/${encodeURIComponent(orderId)}/bso`, {cache: "no-store", headers: authHeaders()});
+    if (!r.ok) return;
+    const b = (await r.json()).bso;
+    if (!b) return;
+    slot.hidden = false;
+    slot.innerHTML = `
+      <div class="calls-heading">БСО</div>
+      <div class="bso-inline">
+        <div class="bso-inline-head">
+          <span class="bso-inline-num">БСО № ${esc(b.bso_number || "—")}</span>
+          <span class="bso-inline-sum">${fmtMoney(b.order_amount)}</span>
+        </div>
+        <div class="bso-row"><span>Факт игроков</span><span>${esc(b.players_fact ?? "—")}</span></div>
+        <div class="bso-row"><span>Зона отдыха</span><span>${fmtMoney(b.rest_zone_amount)}</span></div>
+        <div class="bso-row"><span>Дата игры</span><span>${esc(formatEventDate(b.game_date) || "—")}</span></div>
+      </div>`;
+  } catch (e) { /* нет данных — блок не показываем */ }
+}
+
 async function openOrder(o) {
   if (!state.clients.length) {
     await loadClientsData().catch(() => {});
@@ -410,6 +468,10 @@ async function openDetail(o) {
 
     <div class="key-block">
       <div>
+        <div class="key-label">Дата</div>
+        <div class="key-value">${esc(formatEventDate(e.date) || "—")}</div>
+      </div>
+      <div>
         <div class="key-label">Сеанс</div>
         <div class="key-value">${esc(sessionLabel(e.session))}</div>
       </div>
@@ -421,21 +483,19 @@ async function openDetail(o) {
         <div class="key-label">Тариф</div>
         <div class="key-value">${esc(e.game || "—")}</div>
       </div>
-      <div>
-        <div class="key-label">Дата</div>
-        <div class="key-value">${esc(formatEventDate(e.date) || "—")}</div>
-      </div>
     </div>
 
     <div class="grid">
-      <div class="item item-copy" data-copy="${esc(o.order_id)}"><div class="label">Заказ</div><div class="value">${esc(o.order_id)}</div><span class="copy-icon">📋</span></div>
+      <div class="item item-copy" data-copy="${esc(o.order_id)}"><div class="label">Заказ</div><div class="value">${esc(o.order_id)}</div></div>
       <div class="item"><div class="label">Размещение</div><div class="value">${esc(e.tent || "—")}</div></div>
     </div>
 
     <div class="actions">
-      ${c.phone ? `<button class="action" type="button" data-copy="${esc(phoneLink(c.phone))}">📞 ${esc(phonePretty(c.phone))}<span class="action-hint">📋</span></button>` : ""}
+      ${c.phone ? `<button class="action" type="button" data-copy="${esc(phoneLink(c.phone))}">📞 ${esc(phonePretty(c.phone))}</button>` : ""}
       ${c.email ? `<button class="action action-ghost" type="button" data-copy="${esc(c.email)}">✉️ ${esc(c.email)}</button>` : ""}
     </div>
+
+    <section class="bso-in-order" id="orderBsoSlot" hidden></section>
 
     <section class="calls-section">
       <div class="calls-heading">Звонки</div>
@@ -444,6 +504,7 @@ async function openDetail(o) {
   `;
   dialog.showModal();
   wireCopyButtons();
+  loadOrderBso(o.order_id);
 
   try {
     const r = await fetch(`/api/orders/${encodeURIComponent(o.order_id)}/calls`, {cache:"no-store", headers: authHeaders()});
@@ -480,7 +541,7 @@ async function openClientCard(clientId) {
     <div class="detail-subtitle">Карточка клиента</div>
 
     <div class="actions">
-      ${client.phone ? `<button class="action" type="button" data-copy="${esc(phoneLink(client.phone))}">📞 ${esc(phonePretty(client.phone))}<span class="action-hint">📋</span></button>` : ""}
+      ${client.phone ? `<button class="action" type="button" data-copy="${esc(phoneLink(client.phone))}">📞 ${esc(phonePretty(client.phone))}</button>` : ""}
       ${client.email ? `<button class="action" type="button" data-copy="${esc(client.email)}">✉️ ${esc(client.email)}</button>` : ""}
     </div>
 
@@ -629,42 +690,123 @@ function renderSchedule() {
 
 /* ---------- экраны «Заказы» / «Клиенты» / «Звонки» ---------- */
 
-function renderOrdersDateStrip() {
-  const wrap = document.getElementById("ordersDateStrip");
+const CAL_DOW = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+
+function todayMsk() {
+  return mskDate(new Date().toISOString());
+}
+
+function monthKeyOf(iso) {
+  return String(iso || "").slice(0, 7);
+}
+
+function monthTitle(mk) {
+  const parts = String(mk || "").split("-");
+  if (parts.length < 2) return String(mk || "");
+  return `${MONTHS_RU[Number(parts[1]) - 1]} ${parts[0]}`;
+}
+
+function receiptCounts() {
+  const counts = {};
+  state.orders.forEach(o => {
+    const d = mskDate(o.received_at);
+    if (d) counts[d] = (counts[d] || 0) + 1;
+  });
+  return counts;
+}
+
+function receiptDates(list) {
+  const set = new Set();
+  list.forEach(o => { const d = mskDate(o.received_at); if (d) set.add(d); });
+  return [...set].sort().reverse();
+}
+
+function renderOrdersCalendar() {
+  const wrap = document.getElementById("ordersCalendar");
   if (!wrap) return;
   if (state.ordersFilter !== "date") {
     wrap.hidden = true;
     return;
   }
   wrap.hidden = false;
-  function onChange(ds) {
-    state.ordersDate = ds;
-    renderOrders();
+  if (!state.ordersMonth) state.ordersMonth = monthKeyOf(latestReceiptDay() || todayMsk());
+
+  const parts = state.ordersMonth.split("-").map(Number);
+  const year = parts[0], month = parts[1];
+  const firstDow = (new Date(year, month - 1, 1).getDay() + 6) % 7; // неделя с понедельника
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const counts = receiptCounts();
+  const todayIso = todayMsk();
+
+  let cells = "";
+  for (let i = 0; i < firstDow; i++) cells += '<span class="cal-day off empty"></span>';
+  for (let day = 1; day <= daysInMonth; day++) {
+    const ds = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const n = counts[ds] || 0;
+    const cls = ["cal-day"];
+    if (!n) cls.push("off");
+    if (ds === state.ordersDate) cls.push("active");
+    if (ds === todayIso) cls.push("today");
+    cells += `<button class="${cls.join(" ")}"${n ? ` data-date="${ds}"` : " disabled"}><span class="cal-num">${day}</span><span class="cal-dot${n ? " has" : ""}"></span></button>`;
   }
-  renderDayStrip(wrap, state.ordersDate, onChange);
+
+  const canNext = state.ordersMonth < monthKeyOf(todayMsk());
+  wrap.innerHTML = `
+    <div class="cal-head">
+      <button class="month-arrow" data-cal="prev" aria-label="Предыдущий месяц">\u2039</button>
+      <div class="month-label">${esc(monthTitle(state.ordersMonth))}</div>
+      <button class="month-arrow" data-cal="next" aria-label="Следующий месяц"${canNext ? "" : " disabled"}>\u203A</button>
+    </div>
+    <div class="cal-dow">${CAL_DOW.map(t => `<span>${t}</span>`).join("")}</div>
+    <div class="cal-grid">${cells}</div>`;
+
+  wrap.querySelector('[data-cal="prev"]').addEventListener("click", () => shiftOrdersMonth(-1));
+  const next = wrap.querySelector('[data-cal="next"]');
+  if (next && !next.disabled) next.addEventListener("click", () => shiftOrdersMonth(1));
+  wrap.querySelectorAll(".cal-day[data-date]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.ordersDate = btn.dataset.date;
+      renderOrders();
+    });
+  });
+}
+
+function shiftOrdersMonth(delta) {
+  const parts = String(state.ordersMonth || "").split("-").map(Number);
+  const d = new Date(parts[0], parts[1] - 1 + delta, 1);
+  const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  if (mk > monthKeyOf(todayMsk())) return; // вперёд не листаем: оплату вперёд не получают
+  state.ordersMonth = mk;
+  renderOrders();
 }
 
 function renderOrders() {
   const box = document.getElementById("ordersList");
   const summary = document.getElementById("ordersSummary");
-  let list = state.orders;
-  if (state.ordersFilter === "upcoming") list = list.filter(isUpcoming);
-  else if (state.ordersFilter === "date") {
-    if (!state.ordersDate) state.ordersDate = isoDate(new Date());
-    list = list.filter(o => String(o.event?.date || "").slice(0, 10) === state.ordersDate);
-  }
-  renderOrdersDateStrip();
+  let list = sortByReceipt(state.orders);
+  let summaryText = "";
 
-  if (state.ordersFilter === "upcoming") {
-    summary.textContent = `Ближайшие: ${list.length} из ${state.orders.length}`;
-  } else if (state.ordersFilter === "date") {
-    summary.textContent = `${formatEventDate(state.ordersDate)}: ${list.length} из ${state.orders.length}`;
+  if (state.ordersFilter === "date") {
+    const days = receiptDates(state.orders);
+    if (!state.ordersDate || days.indexOf(state.ordersDate) === -1) state.ordersDate = days[0] || "";
+    state.ordersMonth = monthKeyOf(state.ordersDate) || state.ordersMonth;
+    list = list.filter(o => mskDate(o.received_at) === state.ordersDate);
+    summaryText = `Предоплаты за ${formatReceiptDay(state.ordersDate)}: ${list.length}`;
+    renderOrdersCalendar();
   } else {
-    summary.textContent = `Все: ${list.length}`;
+    const mk = monthKeyOf(todayMsk());
+    state.ordersMonth = mk;
+    list = list.filter(o => monthKeyOf(mskDate(o.received_at)) === mk);
+    summaryText = list.length
+      ? `Ближайшие: ${list.length} за ${monthTitle(mk).toLowerCase()}`
+      : `За ${monthTitle(mk).toLowerCase()} предоплат пока нет`;
+    renderOrdersCalendar();
   }
+
+  summary.textContent = summaryText;
 
   if (!list.length) {
-    box.innerHTML = `<div class="empty">Заказов не найдено</div>`;
+    box.innerHTML = state.ordersFilter === "date" ? `<div class="empty">Заказов не найдено</div>` : "";
     return;
   }
 
@@ -672,7 +814,7 @@ function renderOrders() {
   box.querySelectorAll(".card").forEach(card => {
     card.addEventListener("click", () => {
       const o = state.orders.find(x => String(x.order_id) === card.dataset.id);
-      if (o) openOrder(o);
+      if (o) openDetail(o); // карточка заказа (как в расписании), не карточка клиента
     });
   });
 }

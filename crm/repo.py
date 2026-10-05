@@ -45,7 +45,7 @@ def list_orders(status=None, event_date=None, limit=100):
                session_time, qty, extra_fields, received_at, client_id
         FROM orders
         {where}
-        ORDER BY order_date ASC NULLS LAST, session_time ASC NULLS LAST, id DESC
+        ORDER BY received_at DESC NULLS LAST, id DESC
         LIMIT %s
     """
     return [serialize_order(r) for r in _query(sql, params)]
