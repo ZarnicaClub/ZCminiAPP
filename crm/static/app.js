@@ -302,9 +302,69 @@ function callCard(call, options) {
       ${clientName ? `<div class="call-client">👤 ${esc(clientName)}</div>` : ""}
       <div class="call-admin">${esc(call.administrator || "Администратор не указан")}</div>
       <div class="call-phone">${esc(call.phone || "")}</div>
-      ${call.audio_url ? `<audio class="call-audio" controls preload="none" src="${esc(call.audio_url)}"></audio>` : `<div class="call-unavailable">MP3 недоступен</div>`}
+      ${call.audio_url ? `<audio class="call-audio" controls preload="none" src="${esc(call.audio_url)}"></audio>
+      <button class="call-link" type="button" data-audio-link="${esc(permanentAudioLink(call.audio_url))}">🔗 Ссылка на запись</button>` : `<div class="call-unavailable">MP3 недоступен</div>`}
     </article>
   `;
+}
+
+/* ---------- записи звонков: громкость 50 % и постоянная ссылка на хранилище ---------- */
+
+const CALL_VOLUME = 0.5; // по просьбе Артёма: запись играет вдвое тише
+let callAudioCtx = null;
+const callGainWired = new WeakSet();
+
+/* Постоянная ссылка на файл: у presigned-ссылки отрезаем «?X-Amz-…» — бакет хранилища
+   публичный, без подписи файл отдаётся всегда (проверено 09.10.2026). */
+function permanentAudioLink(url) {
+  return String(url || "").split("?")[0];
+}
+
+/* Громкость. На Android и ПК достаточно HTMLMediaElement.volume; на iPhone это свойство
+   не работает (громкость — только кнопками телефона), поэтому там звук идёт через GainNode. */
+function setCallVolume(el) {
+  if (!el) return;
+  try { el.volume = CALL_VOLUME; } catch (e) { /* свойство может быть только для чтения */ }
+  if (Math.abs(Number(el.volume) - CALL_VOLUME) < 0.01) return;
+  wireGainVolume(el);
+}
+
+function wireGainVolume(el) {
+  if (callGainWired.has(el)) return;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return;
+  try {
+    if (!callAudioCtx) callAudioCtx = new Ctx();
+    const source = callAudioCtx.createMediaElementSource(el);
+    const gain = callAudioCtx.createGain();
+    gain.gain.value = CALL_VOLUME;
+    source.connect(gain);
+    gain.connect(callAudioCtx.destination);
+    callGainWired.add(el);
+    const resume = () => {
+      if (callAudioCtx && callAudioCtx.state === "suspended") callAudioCtx.resume().catch(() => {});
+    };
+    el.addEventListener("play", resume);
+    el.addEventListener("click", resume);
+    resume();
+  } catch (e) { /* не получилось — пусть играет как есть, но не молчит */ }
+}
+
+/* Плеер и кнопка ссылки внутри карточки звонка: гасим всплытие, чтобы на экране «Звонки»
+   нажатие на запись не открывало заодно карточку клиента. */
+function initCallCards(root) {
+  if (!root) return;
+  root.querySelectorAll("audio.call-audio").forEach(el => {
+    setCallVolume(el);
+    ["click", "pointerdown", "mousedown", "touchstart"].forEach(ev =>
+      el.addEventListener(ev, e => e.stopPropagation()));
+  });
+  root.querySelectorAll("[data-audio-link]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      copyText(btn.dataset.audioLink, btn);
+    });
+  });
 }
 
 let copyToastTimer = null;
@@ -517,6 +577,7 @@ async function openDetail(o) {
       return;
     }
     list.innerHTML = calls.map(callCard).join("");
+    initCallCards(list);
   } catch (err) {
     const list = document.getElementById("callsList");
     if (list) list.innerHTML = `<div class="empty">Не удалось загрузить звонки: ${esc(err.message)}</div>`;
@@ -586,6 +647,7 @@ async function openClientCard(clientId) {
     const list = document.getElementById("callsList");
     if (!calls.length) { list.innerHTML = `<div class="empty">Звонков нет</div>`; return; }
     list.innerHTML = calls.map(callCard).join("");
+    initCallCards(list);
   } catch (err) {
     const list = document.getElementById("callsList");
     if (list) list.innerHTML = `<div class="empty">Не удалось загрузить звонки: ${esc(err.message)}</div>`;
@@ -777,7 +839,8 @@ function shiftOrdersMonth(delta) {
   const mk = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   if (mk > monthKeyOf(todayMsk())) return; // вперёд не листаем: оплату вперёд не получают
   state.ordersMonth = mk;
-  renderOrders();
+  // Только календарь: renderOrders() заново выставил бы месяц по выбранной дате и стрелка бы «не нажалась».
+  renderOrdersCalendar();
 }
 
 function renderOrders() {
@@ -858,6 +921,7 @@ function renderCallsToday() {
   }
   summary.textContent = `Звонков за ${label}: ${calls.length}`;
   box.innerHTML = calls.map((c, i) => callCard(c, { showClient: true, index: i })).join("");
+  initCallCards(box);
   box.querySelectorAll(".call-card").forEach(card => {
     card.addEventListener("click", () => {
       const call = calls[Number(card.dataset.callIndex)];
