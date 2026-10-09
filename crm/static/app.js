@@ -116,12 +116,13 @@ function formatReceivedAt(value) {
 
 function formatCallDatetime(value) {
   if (!value) return "";
-  const text = String(value).trim();
-  const iso = text.includes("T") ? text : text.replace(" ", "T");
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return formatReceivedAt(text);
+  // Время звонка показываем по Москве (как и «Поступило»), а не по часам телефона:
+  // иначе на чужом устройстве время в скопированном отчёте «уезжает».
+  const d = parseTs(value);
+  if (!d) return formatReceivedAt(value);
   const p = n => String(n).padStart(2, "0");
-  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${String(d.getFullYear()).slice(-2)} · ${p(d.getHours())}:${p(d.getMinutes())}`;
+  const s = new Date(d.getTime() + MSK_OFFSET_MS);
+  return `${p(s.getUTCDate())}.${p(s.getUTCMonth() + 1)}.${String(s.getUTCFullYear()).slice(-2)} · ${p(s.getUTCHours())}:${p(s.getUTCMinutes())}`;
 }
 
 function formatEventDate(value) {
@@ -350,19 +351,46 @@ function wireGainVolume(el) {
   } catch (e) { /* не получилось — пусть играет как есть, но не молчит */ }
 }
 
+/* Лёгкий отчёт по звонку: копируется вместе с постоянной ссылкой на запись. */
+function callReportText(call) {
+  const duration = Number(call.duration_seconds || 0);
+  const mm = Math.floor(duration / 60);
+  const ss = String(duration % 60).padStart(2, "0");
+  const info = callClientInfo(call);
+  const dt = formatCallDatetime(call.call_datetime);
+  const lines = [`Звонок в клуб${dt ? " " + dt : ""} (${mm}:${ss})`];
+  const phone = call.phone || info.order?.customer?.phone || "";
+  const who = [info.name, phone ? phonePretty(phone) : ""].filter(Boolean).join(", ");
+  if (who) lines.push(`Клиент: ${who}`);
+  if (call.administrator) lines.push(`Принял: ${call.administrator}`);
+  if (info.order) {
+    const parts = [];
+    if (info.order.event?.game) parts.push(String(info.order.event.game));
+    if (info.order.event?.date) parts.push(formatEventDate(info.order.event.date));
+    if (info.order.event?.qty) parts.push(`${info.order.event.qty} чел.`);
+    lines.push(`Заказ ${info.order.order_id}${parts.length ? ": " + parts.join(", ") : ""}`);
+  }
+  lines.push(`Запись: ${permanentAudioLink(call.audio_url)}`);
+  return lines.join("\n");
+}
+
 /* Плеер и кнопка ссылки внутри карточки звонка: гасим всплытие, чтобы на экране «Звонки»
    нажатие на запись не открывало заодно карточку клиента. */
-function initCallCards(root) {
+function initCallCards(root, calls) {
   if (!root) return;
   root.querySelectorAll("audio.call-audio").forEach(el => {
     setCallVolume(el);
     ["click", "pointerdown", "mousedown", "touchstart"].forEach(ev =>
       el.addEventListener(ev, e => e.stopPropagation()));
   });
-  root.querySelectorAll("[data-audio-link]").forEach(btn => {
+  root.querySelectorAll(".call-card").forEach(card => {
+    const btn = card.querySelector("[data-audio-link]");
+    if (!btn) return;
+    const call = (calls && calls[Number(card.dataset.callIndex)]) || null;
+    const text = call ? callReportText(call) : permanentAudioLink(btn.dataset.audioLink);
     btn.addEventListener("click", e => {
       e.stopPropagation();
-      copyText(btn.dataset.audioLink, btn);
+      copyText(text, btn);
     });
   });
 }
@@ -576,8 +604,8 @@ async function openDetail(o) {
       list.innerHTML = `<div class="empty">Звонков пока нет</div>`;
       return;
     }
-    list.innerHTML = calls.map(callCard).join("");
-    initCallCards(list);
+    list.innerHTML = calls.map((c, i) => callCard(c, { index: i })).join("");
+    initCallCards(list, calls);
   } catch (err) {
     const list = document.getElementById("callsList");
     if (list) list.innerHTML = `<div class="empty">Не удалось загрузить звонки: ${esc(err.message)}</div>`;
@@ -646,8 +674,8 @@ async function openClientCard(clientId) {
     const calls = data.calls || [];
     const list = document.getElementById("callsList");
     if (!calls.length) { list.innerHTML = `<div class="empty">Звонков нет</div>`; return; }
-    list.innerHTML = calls.map(callCard).join("");
-    initCallCards(list);
+    list.innerHTML = calls.map((c, i) => callCard(c, { index: i })).join("");
+    initCallCards(list, calls);
   } catch (err) {
     const list = document.getElementById("callsList");
     if (list) list.innerHTML = `<div class="empty">Не удалось загрузить звонки: ${esc(err.message)}</div>`;
@@ -921,7 +949,7 @@ function renderCallsToday() {
   }
   summary.textContent = `Звонков за ${label}: ${calls.length}`;
   box.innerHTML = calls.map((c, i) => callCard(c, { showClient: true, index: i })).join("");
-  initCallCards(box);
+  initCallCards(box, calls);
   box.querySelectorAll(".call-card").forEach(card => {
     card.addEventListener("click", () => {
       const call = calls[Number(card.dataset.callIndex)];
