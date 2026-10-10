@@ -68,6 +68,22 @@ curl -s localhost:8082/status          # selected / tagged / errors / last
 /opt/zcminiapp/.venv-tagger/bin/python -m calls_tagger.main --once --dry-run  # без записи в базу
 ```
 
+### Разовый прогон по истории (например, за октябрь)
+
+Живую службу на это время останавливаем: две расшифровки одновременно (~1,2 ГБ каждая) в 2 ГБ не влезут.
+
+```bash
+systemctl stop zc-tagger
+cd /opt/zcminiapp && set -a && . ./.env.worker && set +a
+export TAGGER_MODEL_DIR=/opt/zcminiapp/models TAGGER_MODEL=small TAGGER_BATCH=100
+/opt/zcminiapp/.venv-tagger/bin/python -m calls_tagger.main --once \
+    --since 2026-10-01 --until 2026-11-01          # + --overwrite, если переразмечаем
+systemctl start zc-tagger
+```
+
+Замер: 36 звонков октября (1,1 ч аудио) — около 17 минут работы сервера; весь архив (421 звонок,
+13,9 ч аудио) — примерно 3,5 часа. Стоит 0 ₽: считает процессор самого сервера.
+
 ## Замеры (09–10.10.2026, 2 CPU)
 
 Расшифровка записи 174 с занимает 40–48 с (≈4× реального времени), пик памяти процесса —

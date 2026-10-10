@@ -50,19 +50,36 @@ def _audio_url(s3_key: str) -> str:
     return f"{endpoint}/{bucket}/{s3_key}"
 
 
-def candidates(limit: int = BATCH):
-    """Звонки без тегов за последние LOOKBACK_HOURS часов."""
-    sql = """
+def candidates(limit: int = BATCH, since: str | None = None, until: str | None = None,
+               overwrite: bool = False):
+    """Звонки без тегов.
+
+    Обычный режим службы: окно LOOKBACK_HOURS от «сейчас».
+    Разовый прогон по истории задаёт границы сам (`since`/`until`, даты YYYY-MM-DD),
+    а `overwrite=True` позволяет переразметить уже размеченные звонки (после правки словаря).
+    """
+    cond, params = ["s3_key IS NOT NULL"], []
+    if since:
+        cond.append("call_datetime >= %s")
+        params.append(since)
+    else:
+        cond.append("call_datetime >= now() - make_interval(hours => %s)")
+        params.append(LOOKBACK_HOURS)
+    if until:
+        cond.append("call_datetime < %s")
+        params.append(until)
+    if not overwrite:
+        cond.append("NOT (metadata ? 'tags')")
+    params.append(limit)
+    sql = f"""
         SELECT id, s3_key, call_datetime, duration_seconds
         FROM calls
-        WHERE s3_key IS NOT NULL
-          AND NOT (metadata ? 'tags')
-          AND call_datetime >= now() - make_interval(hours => %s)
+        WHERE {' AND '.join(cond)}
         ORDER BY call_datetime
         LIMIT %s
     """
     with pool().connection() as conn:
-        return conn.execute(sql, (LOOKBACK_HOURS, limit)).fetchall()
+        return conn.execute(sql, tuple(params)).fetchall()
 
 
 def save_tags(call_id: int, tags: dict, transcript: str) -> None:
@@ -112,10 +129,11 @@ def process_one(row, dry_run: bool = False) -> dict:
             os.unlink(tmp.name)
 
 
-def run_once(dry_run: bool = False) -> dict:
+def run_once(dry_run: bool = False, since: str | None = None, until: str | None = None,
+             overwrite: bool = False) -> dict:
     """Один проход. Ошибка на одном звонке не срывает остальные."""
     STATUS["last_cycle_at"] = datetime.now(timezone.utc).isoformat()
-    rows = candidates()
+    rows = candidates(since=since, until=until, overwrite=overwrite)
     STATUS["selected"] = len(rows)
     STATUS["tagged"] = 0
     STATUS["last"] = []

@@ -64,20 +64,35 @@ def notify_telegram(text: str) -> None:
         log.warning("не удалось отправить уведомление в Telegram: %s", e)
 
 
+def _arg_value(flag: str) -> str | None:
+    """Значение флага вида `--since 2026-10-01`."""
+    if flag in sys.argv:
+        i = sys.argv.index(flag)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+    return None
+
+
 def main():
     setup_logging()
     once = "--once" in sys.argv
     dry_run = "--dry-run" in sys.argv
+    # Разовый прогон по истории: `--once --since 2026-10-01 --until 2026-11-01 [--overwrite]`
+    since = _arg_value("--since")
+    until = _arg_value("--until")
+    overwrite = "--overwrite" in sys.argv
 
     log.info(
-        "calls-tagger запущен%s%s: интервал %s c, health-порт %s, окно разметки %s ч, модель %s",
+        "calls-tagger запущен%s%s: интервал %s c, health-порт %s, окно разметки %s ч, модель %s%s",
         " (разовый прогон)" if once else "", " (без записи)" if dry_run else "",
         INTERVAL, HEALTH_PORT, LOOKBACK_HOURS, os.getenv("TAGGER_MODEL") or "small",
+        f", диапазон {since or '—'} … {until or '—'}{', переразметка' if overwrite else ''}"
+        if (since or until) else "",
     )
 
     if once:
         try:
-            run_once(dry_run=dry_run)
+            run_once(dry_run=dry_run, since=since, until=until, overwrite=overwrite)
             log.info("разовый прогон завершён: к обработке %s, размечено %s, ошибок %s",
                      STATUS["selected"], STATUS["tagged"], STATUS["errors"])
         except Exception as e:  # noqa: BLE001
