@@ -283,6 +283,45 @@ function callClientInfo(call) {
   return { order, client, name };
 }
 
+/* Подписи и цвета плашек с типом запроса: теги ставит calls_tagger по расшифровке записи. */
+const CALL_TAG_LABEL = {
+  "детский": "Детский",
+  "школьная_группа": "Школьная группа",
+  "корпоратив": "Корпоратив",
+  "праздник_взрослые": "Праздник, взрослые",
+  "просто_игра": "Просто игра",
+  "нецелевой": "Нецелевой",
+  "непонятно": "Непонятно",
+};
+const CALL_TAG_CLASS = {
+  "детский": "kids",
+  "школьная_группа": "school",
+  "корпоратив": "corp",
+  "праздник_взрослые": "party",
+  "просто_игра": "game",
+  "нецелевой": "junk",
+  "непонятно": "unknown",
+};
+
+function callTagLabel(type) {
+  return CALL_TAG_LABEL[type] || type || "";
+}
+
+/* Плашка «Детский · 📅 17.10.2026 · 👥 30». Нет тега (старый звонок, ещё не размечен) — пусто. */
+function callTagsHtml(call) {
+  const tags = call.tags || {};
+  if (!tags.type) return "";
+  const bits = [];
+  if (tags.date && tags.date.date) {
+    bits.push(`<span class="call-tag-meta">📅 ${esc(formatEventDate(tags.date.date))}</span>`);
+  }
+  if (tags.players && tags.players.players) {
+    bits.push(`<span class="call-tag-meta">👥 ${esc(tags.players.players)}</span>`);
+  }
+  const cls = CALL_TAG_CLASS[tags.type] || "unknown";
+  return `<div class="call-tags"><span class="call-tag tag-${cls}">${esc(callTagLabel(tags.type))}</span>${bits.join("")}</div>`;
+}
+
 function callCard(call, options) {
   const opts = (options && typeof options === "object") ? options : {};
   const duration = Number(call.duration_seconds || 0);
@@ -296,6 +335,7 @@ function callCard(call, options) {
   const idxAttr = opts.index != null ? ` data-call-index="${opts.index}"` : "";
   return `
     <article class="call-card${linked ? " call-card-linked" : ""}"${idxAttr}>
+      ${callTagsHtml(call)}
       <div class="call-topline">
         <div class="call-date">📞 ${esc(dt || "Дата не указана")}</div>
         <div class="call-duration">${mm}:${ss}</div>
@@ -359,6 +399,10 @@ function callReportText(call) {
   const info = callClientInfo(call);
   const dt = formatCallDatetime(call.call_datetime);
   const lines = [`Звонок в клуб${dt ? " " + dt : ""} (${mm}:${ss})`];
+  const tags = call.tags || {};
+  if (tags.type) lines.push(`Тип: ${callTagLabel(tags.type).toLowerCase()}`);
+  if (tags.date && tags.date.date) lines.push(`Дата игры: ${formatEventDate(tags.date.date)}`);
+  if (tags.players && tags.players.players) lines.push(`Игроков: ${tags.players.players}`);
   const phone = call.phone || info.order?.customer?.phone || "";
   const who = [info.name, phone ? phonePretty(phone) : ""].filter(Boolean).join(", ");
   if (who) lines.push(`Клиент: ${who}`);

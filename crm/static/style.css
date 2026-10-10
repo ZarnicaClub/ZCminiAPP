@@ -193,6 +193,15 @@ button.action{border:0;cursor:pointer;font:inherit;width:100%}
 .calls-heading{font-size:18px;font-weight:700;margin-bottom:10px}
 .calls-list{display:grid;gap:10px}
 .call-card{padding:12px;border-radius:14px;background:rgba(127,127,127,0.08)}
+.call-tags{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-bottom:8px}
+.call-tag{font-size:12px;font-weight:650;padding:3px 10px;border-radius:999px;border:1px solid transparent;white-space:nowrap}
+.call-tag-meta{font-size:12px;color:var(--muted);white-space:nowrap}
+.call-tag.tag-kids{background:#e8f1ff;color:#1c4b8a;border-color:#cadcf6}
+.call-tag.tag-school{background:#efe8ff;color:#4a2a8a;border-color:#dcd0f7}
+.call-tag.tag-corp{background:#e6f4ea;color:#1e6b3a;border-color:#c8e5d3}
+.call-tag.tag-party{background:#fdf1e3;color:#8a5a12;border-color:#f2ddc0}
+.call-tag.tag-game{background:#eef4f8;color:#2c5a73;border-color:#d6e4ec}
+.call-tag.tag-junk,.call-tag.tag-unknown{background:#f1efec;color:#7d7972;border-color:#e2ded8}
 .call-topline{display:flex;justify-content:space-between;gap:10px;align-items:center}
 .call-date{font-weight:600}
 .call-duration{white-space:nowrap;font-variant-numeric:tabular-nums}

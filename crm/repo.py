@@ -65,22 +65,30 @@ def get_order(order_id):
     return serialize_order(rows[0]) if rows else None
 
 
+def _call_out(row):
+    """Запись звонка для фронтенда: теги из metadata + временная ссылка на MP3.
+
+    Расшифровку наружу не отдаём: на звонок это 1–3 КБ текста, а списку из 200 звонков
+    она не нужна. Наружу идут только теги (`calls_tagger` их и кладёт в metadata.tags).
+    """
+    d = serialize_row(row)
+    meta = d.pop("metadata", None) or {}
+    d["tags"] = meta.get("tags")
+    d["audio_url"] = presigned_url(d.get("s3_key"), expires=900)
+    return d
+
+
 def order_calls(order_id):
     rows = _query(
         """
         SELECT id, email_id, order_id, phone, call_datetime, administrator,
-               mp3_filename, s3_key, duration_seconds, status, created_at
+               mp3_filename, s3_key, duration_seconds, status, created_at, metadata
         FROM calls WHERE order_id = %s
         ORDER BY call_datetime DESC, id DESC
         """,
         (order_id,),
     )
-    out = []
-    for r in rows:
-        d = serialize_row(r)
-        d["audio_url"] = presigned_url(d.get("s3_key"), expires=900)
-        out.append(d)
-    return out
+    return [_call_out(r) for r in rows]
 
 
 def get_order_bso(order_id):
@@ -173,36 +181,26 @@ def client_calls(client_id):
     rows = _query(
         """
         SELECT id, email_id, order_id, phone, call_datetime, administrator,
-               mp3_filename, s3_key, duration_seconds, status, created_at
+               mp3_filename, s3_key, duration_seconds, status, created_at, metadata
         FROM calls WHERE client_id = %s
         ORDER BY call_datetime DESC, id DESC
         """,
         (client_id,),
     )
-    out = []
-    for r in rows:
-        d = serialize_row(r)
-        d["audio_url"] = presigned_url(d.get("s3_key"), expires=900)
-        out.append(d)
-    return out
+    return [_call_out(r) for r in rows]
 
 
 def unmatched_calls(limit=200):
     rows = _query(
         """
         SELECT id, email_id, order_id, phone, call_datetime, administrator,
-               s3_key, duration_seconds, status
+               s3_key, duration_seconds, status, metadata
         FROM calls WHERE status = 'unmatched'
         ORDER BY call_datetime DESC, id DESC LIMIT %s
         """,
         (limit,),
     )
-    out = []
-    for r in rows:
-        d = serialize_row(r)
-        d["audio_url"] = presigned_url(d.get("s3_key"), expires=900)
-        out.append(d)
-    return out
+    return [_call_out(r) for r in rows]
 
 
 def _day_bounds(date_str=None):
@@ -232,7 +230,7 @@ def calls_today(limit=200, date_str=None):
     rows = _query(
         """
         SELECT id, email_id, order_id, phone, call_datetime, administrator,
-               mp3_filename, s3_key, duration_seconds, status, created_at
+               mp3_filename, s3_key, duration_seconds, status, created_at, metadata
         FROM calls
         WHERE call_datetime >= %s AND call_datetime < %s
         ORDER BY call_datetime DESC, id DESC
@@ -240,12 +238,7 @@ def calls_today(limit=200, date_str=None):
         """,
         (start.isoformat(), end.isoformat(), limit),
     )
-    out = []
-    for r in rows:
-        d = serialize_row(r)
-        d["audio_url"] = presigned_url(d.get("s3_key"), expires=900)
-        out.append(d)
-    return out
+    return [_call_out(r) for r in rows]
 
 
 def weekend_headcount():
