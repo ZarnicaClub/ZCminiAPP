@@ -1,0 +1,14 @@
+# Зависимости отдельной службы `calls-tagger` — расшифровка и разметка новых звонков.
+#
+# Ставится в СВОЙ venv на сервере воркера (не в тот, где живёт calls_worker):
+#   python3 -m venv /opt/zcminiapp/.venv-tagger
+#   /opt/zcminiapp/.venv-tagger/bin/pip install -r requirements-tagger.txt
+#
+# Отдельный venv — потому что faster-whisper тянет ctranslate2/onnxruntime/tokenizers,
+# а приём звонков из почты не должен зависеть от этих версий.
+
+-r requirements.txt
+faster-whisper==1.2.1
+# Питфолл 10.10.2026: с PyAV 19.0.1 faster-whisper падает на `av.open(..., metadata_errors=...)`.
+# Рабочая связка — 18.1.0 (та же, что в .venv-stt на сервере Hermes).
+av==18.1.0
