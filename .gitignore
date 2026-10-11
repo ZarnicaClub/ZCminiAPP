@@ -24,6 +24,10 @@ var/
 .tmp/
 .packages/
 
+# Макет для Figma: рабочие скриншоты и упакованный архив не храним
+figma/_src/shots/
+figma/*.zip
+
 # OS / editors
 .DS_Store
 Thumbs.db
