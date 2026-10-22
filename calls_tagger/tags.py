@@ -266,6 +266,11 @@ PRICE_BEFORE = ("стоит", "стоимость", "цену", "цена", "п�
 # «приедут» здесь намеренно нет: «приедут либо 10 либо 14 утра» — это время, а не группа.
 CLIENT_MARKERS = ("нас", "у нас", "будет", "планиру", "ожида", "состав",
                   "всего", "где то", "примерно", "около", "порядка", "типа")
+# «если реально будет играть 80 человек» — гипотеза администратора, а не слова заказчика:
+# число из условной фразы не считается утверждением о группе (22.10.2026, звонок №903).
+# Но «если нас будет 12 человек» — обычная заявка клиента: «нас», «мы» внутри условия оставляем.
+CONDITIONAL = re.compile(r"\bесли\b")
+CLIENT_SELF = ("нас", "у нас", "мы ", "наша", "наш ", "мне", "меня")
 
 
 def find_players(text: str) -> dict | None:
@@ -306,14 +311,21 @@ def find_players(text: str) -> dict | None:
         if not unit_near and any(w in before for w in PRICE_BEFORE):
             continue                                  # «сколько будет стоить 5 бое» — цена, не группа
         marked = any(w in before for w in CLIENT_MARKERS)
+        conditional = bool(CONDITIONAL.search(before)) and not any(w in before for w in CLIENT_SELF)
+        if conditional:
+            marked = False                            # гипотеза («если будет 80 человек») — не слова заказчика
         if not (unit_near or marked):
             continue                                  # число без «человек/участник» и без слов заказчика
         score = (3 if unit_near else 0) + (2 if marked else 0)
         if best is None or score > best[0]:
-            best = (score, m.start(), n, (m.group(0) + " " + after.strip().split(" ")[0]).strip())
+            best = (score, m.start(), n, (m.group(0) + " " + after.strip().split(" ")[0]).strip(),
+                    conditional)
 
     if best:
-        return {"players": best[2], "text": best[3]}
+        found = {"players": best[2], "text": best[3]}
+        if best[4]:
+            found["conditional"] = True               # из условной фразы — тип по нему не меняем
+        return found
 
     # Число словом: «придут два человека», «нас будет тридцать человек», «человек тридцать».
     card = "|".join(w for w, _ in CARDINALS)
@@ -345,7 +357,8 @@ def classify(text: str, call_day: date) -> dict:
     res = detect_type(text)
     game = res["type"] not in ("непонятно", "нецелевой", "недозвон")
     players = find_players(text) if res["type"] not in ("нецелевой", "недозвон") else None
-    if players and players["players"] >= CORP_MIN_PLAYERS and res["type"] in ("просто_игра", "непонятно"):
+    if players and players["players"] >= CORP_MIN_PLAYERS and res["type"] in ("просто_игра", "непонятно") \
+            and not players.get("conditional"):
         res = {"type": "корпоратив", "why": f"{players['players']} человек"}
         game = True
     res["date"] = find_date(text, call_day) if game else None
