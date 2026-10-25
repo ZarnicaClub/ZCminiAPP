@@ -311,7 +311,8 @@ function callTagLabel(type) {
 
 /* Плашка «Детский · 📅 17.10.2026 · 👥 30». Нет тега (старый звонок, ещё не размечен) — пусто. */
 function callTagsHtml(call) {
-  const tags = call.tags || {};
+  // В карточке показываем согласованный тег заказа: новый звонок уточняет, а не перебивает.
+  const tags = call.tags_card || call.tags || {};
   if (!tags.type) return "";
   const bits = [];
   if (tags.date && tags.date.date) {
@@ -401,7 +402,8 @@ function callReportText(call) {
   const info = callClientInfo(call);
   const dt = formatCallDatetime(call.call_datetime);
   const lines = [`Звонок в клуб${dt ? " " + dt : ""} (${mm}:${ss})`];
-  const tags = call.tags || {};
+  // В карточке показываем согласованный тег заказа: новый звонок уточняет, а не перебивает.
+  const tags = call.tags_card || call.tags || {};
   if (tags.type) lines.push(`Тип: ${callTagLabel(tags.type).toLowerCase()}`);
   if (tags.date && tags.date.date) lines.push(`Дата игры: ${formatEventDate(tags.date.date)}`);
   if (tags.players && tags.players.players) lines.push(`Игроков: ${tags.players.players}`);

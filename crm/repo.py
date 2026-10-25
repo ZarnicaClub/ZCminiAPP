@@ -7,6 +7,7 @@ from psycopg.rows import dict_row
 from shared.db import pool
 from shared.s3 import presigned_url
 from shared.serialize import json_safe, serialize_order, serialize_row
+from crm.card_tags import agreed_tags
 
 
 def _query(sql, params=None):
@@ -78,6 +79,33 @@ def _call_out(row):
     return d
 
 
+def _orders_map(order_ids):
+    """Заказы по их order_id: для согласованного тега нужны только qty и дата игры."""
+    ids = [i for i in set(order_ids) if i]
+    if not ids:
+        return {}
+    rows = _query(
+        "SELECT order_id, qty, order_date, order_status FROM orders WHERE order_id = ANY(%s)",
+        (ids,),
+    )
+    return {r["order_id"]: r for r in rows}
+
+
+def _with_card_tags(calls, orders):
+    """Проставить каждому звонку согласованный тег его карточки (tags_card)."""
+    groups = {}
+    for call in calls:
+        order_id = call.get("order_id")
+        if order_id:
+            groups.setdefault(order_id, []).append(call)
+    for order_id, group in groups.items():
+        agreed = agreed_tags(group, orders.get(order_id))
+        if agreed:
+            for call in group:
+                call["tags_card"] = agreed
+    return calls
+
+
 def order_calls(order_id):
     rows = _query(
         """
@@ -88,7 +116,8 @@ def order_calls(order_id):
         """,
         (order_id,),
     )
-    return [_call_out(r) for r in rows]
+    calls = [_call_out(r) for r in rows]
+    return _with_card_tags(calls, _orders_map([order_id]))
 
 
 def get_order_bso(order_id):
@@ -187,7 +216,8 @@ def client_calls(client_id):
         """,
         (client_id,),
     )
-    return [_call_out(r) for r in rows]
+    calls = [_call_out(r) for r in rows]
+    return _with_card_tags(calls, _orders_map([c.get("order_id") for c in calls]))
 
 
 def unmatched_calls(limit=200):
