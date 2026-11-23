@@ -611,7 +611,7 @@ async function openDetail(o) {
     <div class="key-block">
       <div>
         <div class="key-label">Дата</div>
-        <div class="key-value${state.canEdit && e.date ? " key-editable" : ""}"${state.canEdit && e.date ? ' id="editDateBtn" role="button" tabindex="0"' : ""}>${esc(formatEventDate(e.date) || "—")}${state.canEdit && e.date ? ' <span class="edit-pencil">✎</span>' : ""}</div>
+        <div class="key-value">${esc(formatEventDate(e.date) || "—")}</div>
       </div>
       <div>
         <div class="key-label">Сеанс</div>
@@ -655,8 +655,6 @@ async function openDetail(o) {
   if (!dialog.open) dialog.showModal();
   wireCopyButtons();
   loadOrderBso(o.order_id);
-  const editDateBtn = document.getElementById("editDateBtn");
-  if (editDateBtn) editDateBtn.addEventListener("click", () => openDatePicker(o));
   const editOrderBtn = document.getElementById("editOrderBtn");
   if (editOrderBtn) editOrderBtn.addEventListener("click", () => openEditSheet(o));
   loadOrderHistory(o.order_id);
@@ -1225,11 +1223,10 @@ function nextSaturdayIso() {
   return isoDate(d);
 }
 
-function openDatePicker(order) {
+function openDatePickerForEdit() {
   const t = pickerToday();
-  const cur = String(order?.event?.date || "").slice(0, 10);
+  const cur = String(state.edit?.saved?.order_date || "").slice(0, 10);
   state.pick = {
-    order,
     current: cur,
     year: t.year,          // открываем на текущем месяце, а не на далёком годе заказа
     month: t.month,
@@ -1351,32 +1348,15 @@ function syncDateConfirm() {
   save.disabled = same;
 }
 
-async function savePickedDate() {
+function savePickedDate() {
   const p = state.pick;
   const save = document.getElementById("dateSave");
   if (!p || !p.selected || save.disabled) return;
-  save.disabled = true;
-  try {
-    const r = await fetch(`/api/orders/${encodeURIComponent(p.order.order_id)}/date`, {
-      method: "PATCH",
-      headers: {...authHeaders(), "Content-Type": "application/json"},
-      body: JSON.stringify({date: p.selected}),
-    });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const data = await r.json();
-    const newDate = data.new_date || p.selected;
-    if (p.order.event) p.order.event.date = newDate;
-    const mine = state.orders.find(x => String(x.order_id) === String(p.order.order_id));
-    if (mine && mine.event) mine.event.date = newDate;
+  // дата не сохраняется сразу — становится значением в форме «Изменить заказ»
+  if (state.edit) {
+    state.edit.order_date = p.selected;
     dateDialog.close();
-    showCopyToast("Дата изменена");
-    if (dialog.open) openDetail(p.order);
-    if (state.view === "orders") renderOrders();
-    if (state.view === "schedule") renderSchedule();
-    if (state.view === "clients") renderClients();
-  } catch (e) {
-    showCopyToast("Не удалось сохранить дату");
-    save.disabled = false;
+    renderEditForm();
   }
 }
 
@@ -1480,6 +1460,7 @@ async function loadOrderHistory(orderId) {
 async function openEditSheet(order) {
   const e = order?.event || {};
   const base = {
+    order_date: e.date || "",
     session_time: e.session || "",
     qty: e.qty == null ? "" : String(e.qty),
     game: e.game || "",
@@ -1521,6 +1502,13 @@ function renderEditForm() {
   `).join("");
 
   document.getElementById("editForm").innerHTML = `
+    <div class="edit-sec">
+      <div class="edit-label">Дата</div>
+      <button type="button" class="edit-date" id="editDateRow">
+        <span>${esc(formatEventDate(state.edit.order_date) || "—")}</span>
+        <span class="edit-date-hint">изменить</span>
+      </button>
+    </div>
     <div class="edit-sec">
       <div class="edit-label">Сеанс</div>
       ${editChips("session_time", sessions, prettySession)}
@@ -1567,6 +1555,8 @@ function renderEditForm() {
   });
   const input = document.getElementById("editQty");
   if (input) input.addEventListener("input", () => { state.edit.qty = input.value; updateEditSummary(); });
+  const dateRow = document.getElementById("editDateRow");
+  if (dateRow) dateRow.addEventListener("click", () => openDatePickerForEdit());
   updateEditSummary();
 }
 
@@ -1575,7 +1565,7 @@ function editChanges() {
   if (!s) return {};
   const base = s.saved;
   const out = {};
-  ["session_time", "game", "tent"].forEach(f => {
+  ["order_date", "session_time", "game", "tent"].forEach(f => {
     if (String(s[f] || "") !== String(base[f] || "")) out[f] = s[f];
   });
   const qty = String(s.qty || "").trim();
@@ -1585,8 +1575,8 @@ function editChanges() {
 
 function updateEditSummary() {
   const changes = editChanges();
-  const labels = {session_time: "Сеанс", qty: "Игроков", game: "Тариф", tent: "Размещение"};
-  const fmt = {session_time: prettySession, qty: x => String(x), game: prettyGame, tent: prettyTent};
+  const labels = {order_date: "Дата", session_time: "Сеанс", qty: "Игроков", game: "Тариф", tent: "Размещение"};
+  const fmt = {order_date: x => formatEventDate(x) || "—", session_time: prettySession, qty: x => String(x), game: prettyGame, tent: prettyTent};
   const parts = Object.entries(changes).map(([f, v]) => {
     const old = state.edit.saved[f];
     return `${labels[f]}: ${esc(fmt[f](old) || "—")} → ${esc(fmt[f](v) || "—")}`;
@@ -1612,6 +1602,7 @@ async function saveEditFields() {
     if (!r.ok) throw new Error("HTTP " + r.status);
     await r.json();
     if (order.event) {
+      if (changes.order_date !== undefined) order.event.date = changes.order_date;
       if (changes.session_time !== undefined) order.event.session = changes.session_time;
       if (changes.qty !== undefined) order.event.qty = changes.qty;
       if (changes.game !== undefined) order.event.game = changes.game;

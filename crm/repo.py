@@ -345,45 +345,6 @@ def list_editors():
     )
 
 
-# --- ручная правка даты игры (пишущий адрес) ---
-
-def edit_order_date(order_id, new_date, edited_by):
-    """Меняет дату игры и пишет строку в журнал правок.
-
-    Возвращает dict(old, new, changed) или None, если заказа нет.
-    old/new — объекты date либо None.
-    """
-    with pool().connection() as conn:
-        cur = conn.execute(
-            "SELECT order_date FROM orders WHERE order_id = %s FOR UPDATE",
-            (order_id,),
-        )
-        row = cur.fetchone()
-        if row is None:
-            return None
-        old = row[0]
-        if old == new_date:
-            return {"old": old, "new": new_date, "changed": False}
-        conn.execute(
-            "UPDATE orders SET order_date = %s WHERE order_id = %s",
-            (new_date, order_id),
-        )
-        conn.execute(
-            """
-            INSERT INTO order_edits (order_id, field, old_value, new_value, edited_by)
-            VALUES (%s, 'order_date', %s, %s, %s)
-            """,
-            (
-                order_id,
-                old.isoformat() if old else None,
-                new_date.isoformat(),
-                edited_by,
-            ),
-        )
-        conn.commit()
-        return {"old": old, "new": new_date, "changed": True}
-
-
 # --- словари значений для выбора (из того, что уже есть в заказах) ---
 
 def dictionaries():
@@ -409,7 +370,7 @@ def dictionaries():
 
 # --- история правок заказа ---
 
-EDIT_FIELDS = ("session_time", "qty", "game", "tent")
+EDIT_FIELDS = ("order_date", "session_time", "qty", "game", "tent")
 
 
 def order_edits(order_id, limit=200):
@@ -438,7 +399,7 @@ def edit_order_fields(order_id, changes, edited_by):
     """
     with pool().connection() as conn:
         cur = conn.execute(
-            "SELECT session_time, qty, game, tent FROM orders WHERE order_id = %s FOR UPDATE",
+            "SELECT order_date, session_time, qty, game, tent FROM orders WHERE order_id = %s FOR UPDATE",
             (order_id,),
         )
         row = cur.fetchone()

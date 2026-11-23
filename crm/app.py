@@ -70,39 +70,6 @@ def api_me(user: dict = Depends(current_user)):
     }
 
 
-@app.patch("/api/orders/{order_id}/date")
-def api_edit_order_date(
-    order_id: str,
-    payload: dict = Body(...),
-    user: dict = Depends(require_editor),
-):
-    """Правка даты игры: только редактор из crm_editors.
-
-    400 — дата не в формате ГГГГ-ММ-ДД; 404 — заказа нет.
-    Дата меняется в orders.order_date (вебхук Тильды приходит один раз),
-    каждая правка пишется в журнал order_edits.
-    """
-    raw = payload.get("date") if isinstance(payload, dict) else None
-    if not isinstance(raw, str) or not _DATE_RE.match(raw):
-        raise HTTPException(status_code=400, detail="invalid_date")
-    try:
-        new_date = date.fromisoformat(raw)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="invalid_date")
-    if not (1990 <= new_date.year <= 2100):
-        raise HTTPException(status_code=400, detail="date_out_of_range")
-    result = repo.edit_order_date(order_id, new_date, user.get("id"))
-    if result is None:
-        raise HTTPException(status_code=404, detail="order_not_found")
-    return {
-        "ok": True,
-        "order_id": order_id,
-        "old_date": result["old"].isoformat() if result["old"] else None,
-        "new_date": raw,
-        "changed": result["changed"],
-    }
-
-
 @app.get("/api/dictionaries", dependencies=[Depends(require_auth)])
 def api_dictionaries():
     """Значения для выбора: сеансы, тарифы, размещение — из того, что уже есть в заказах."""
@@ -121,10 +88,10 @@ def api_edit_order_fields(
     payload: dict = Body(...),
     user: dict = Depends(require_editor),
 ):
-    """Правка сеанса, числа игроков, тарифа и размещения — только редактор.
+    """Правка заказа одним сохранением: дата, сеанс, игроки, тариф, размещение.
 
-    Сеанс/тариф/размещение принимаются только из существующих значений (словари),
-    игроки — целое число 1..500. По каждому изменённому полю — строка в журнале.
+    Дата — ГГГГ-ММ-ДД (1990..2100), сеанс/тариф/размещение — только из существующих
+    значений (словари), игроки — целое 1..500. По каждому изменённому полю — строка в журнале.
     """
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="invalid_payload")
@@ -134,7 +101,17 @@ def api_edit_order_fields(
     dicts = repo.dictionaries()
     changes = {}
     for field, value in raw.items():
-        if field == "qty":
+        if field == "order_date":
+            if not isinstance(value, str) or not _DATE_RE.match(value):
+                raise HTTPException(status_code=400, detail="invalid_date")
+            try:
+                new_date = date.fromisoformat(value)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="invalid_date")
+            if not (1990 <= new_date.year <= 2100):
+                raise HTTPException(status_code=400, detail="date_out_of_range")
+            changes[field] = new_date
+        elif field == "qty":
             try:
                 num = int(str(value).strip())
             except (TypeError, ValueError):

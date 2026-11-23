@@ -87,6 +87,31 @@ def test_edit_fields_400(monkeypatch, payload):
     assert r.status_code == 400
 
 
+@pytest.mark.parametrize("payload,bad", [
+    ({"order_date": "2026-12-07"}, False),
+    ({"order_date": "07.12.2026"}, True),
+    ({"order_date": "2026-13-01"}, True),
+    ({"order_date": "2012-12-07"}, False),
+    ({"order_date": ""}, True),
+    ({"order_date": "1800-01-01"}, True),
+])
+def test_edit_order_date_field(monkeypatch, payload, bad):
+    _allow(monkeypatch)
+    seen = {}
+
+    def fake(order_id, changes, edited_by):
+        seen.update(changes)
+        return [{"field": "order_date", "old": "2012-12-07", "new": changes.get("order_date")}]
+
+    monkeypatch.setattr(crm_app.repo, "edit_order_fields", fake)
+    r = TestClient(app).patch("/api/orders/1444418991/fields", headers=_headers(), json=payload)
+    if bad:
+        assert r.status_code == 400
+    else:
+        assert r.status_code == 200
+        assert str(seen["order_date"]) == payload["order_date"]
+
+
 def test_edit_fields_404(monkeypatch):
     _allow(monkeypatch)
     monkeypatch.setattr(crm_app.repo, "edit_order_fields", lambda *a: None)
