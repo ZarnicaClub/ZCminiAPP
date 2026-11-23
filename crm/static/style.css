@@ -325,8 +325,36 @@ transition:background 110ms var(--ease-out),color 110ms var(--ease-out)}
 .cal-dot{width:6px;height:6px;border-radius:50%;margin-top:2px;background:transparent}
 .cal-dot.has{background:var(--green)}
 .cal-day.active .cal-dot.has{background:#fff}
+/* ---------- выбор даты: год → месяц → день ---------- */
+.pick-quick{display:flex;gap:8px;margin-bottom:10px}
+.pick-quick button{flex:1;min-height:38px;border-radius:10px;border:1px solid var(--line);
+ background:var(--card);font-size:13px;font-weight:600;color:var(--text)}
+.pick-years{display:flex;gap:6px;margin-bottom:4px}
+.pick-year{flex:1;min-height:40px;border-radius:10px;border:1px solid var(--line);
+ background:var(--card);font-size:15px;font-weight:650;color:var(--text)}
+.pick-year.active{background:var(--green);border-color:var(--green);color:#fff}
+.pick-years-more{text-align:right;margin-bottom:10px}
+.pick-more{border:0;background:none;padding:0 2px;font-size:12px;font-weight:500;
+ color:var(--muted);text-decoration:underline}
+.pick-custom{display:flex;gap:8px;margin:0 0 10px}
+.pick-custom input{flex:1;min-width:0;min-height:40px;border-radius:10px;border:1px solid var(--line);
+ padding:0 12px;font-size:16px;font-family:inherit;background:var(--card);color:var(--text)}
+.pick-custom-ok{min-width:64px;border-radius:10px;border:1px solid var(--green);
+ background:var(--green);color:#fff;font-weight:650;font-size:14px}
+.pick-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:0 0 8px}
+.pick-months{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
+.pick-month{min-height:44px;border-radius:12px;border:1px solid var(--line);
+ background:var(--card);font-size:14px;font-weight:600;color:var(--text)}
+.pick-month.active{background:var(--green-soft);border-color:var(--green);color:var(--green-dark);font-weight:700}
+.pick-month-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.pick-month-head .name{font-size:16px;font-weight:750}
+.pick-month-head button{border:0;background:none;color:var(--green-dark);font-size:12px;
+ font-weight:600;text-decoration:underline;padding:0}
+.cal-day.empty{border-color:transparent;background:transparent}
 /* шторка правки даты (снизу, поверх карточки заказа) */
-dialog.sheet{width:100%;max-width:100%;margin:0;position:fixed;inset:auto 0 0 0;border-radius:18px 18px 0 0}
+dialog.sheet{width:100%;max-width:100%;margin:0;position:fixed;inset:auto 0 0 0;border-radius:18px 18px 0 0;
+ max-height:94vh}
+dialog.sheet .sheet-body{max-height:94vh;overflow:auto}
 .sheet-body{background:var(--card);padding:16px 18px calc(16px + env(safe-area-inset-bottom))}
 .sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .sheet-title{font-size:17px;font-weight:750}

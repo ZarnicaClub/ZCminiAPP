@@ -1200,63 +1200,128 @@ async function loadMe() {
   } catch (e) { /* не смогли узнать — дата остаётся обычным текстом */ }
 }
 
+function pickerToday() {
+  const d = new Date();
+  return {year: d.getFullYear(), month: d.getMonth() + 1, iso: isoDate(d)};
+}
+
+function nextSaturdayIso() {
+  const d = new Date();
+  d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7)); // сегодня суббота → сегодня
+  return isoDate(d);
+}
+
 function openDatePicker(order) {
+  const t = pickerToday();
   const cur = String(order?.event?.date || "").slice(0, 10);
   state.pick = {
     order,
     current: cur,
-    month: cur ? cur.slice(0, 7) : monthKeyOf(todayMsk()),
+    year: t.year,          // открываем на текущем месяце, а не на далёком годе заказа
+    month: t.month,
+    step: "month",         // month → выбор дня
     selected: null,
+    years: [t.year, t.year + 1, t.year + 2],  // только вперёд: игры переносят на будущее
+    customYear: false,
   };
   renderDatePicker();
   if (!dateDialog.open) dateDialog.showModal();
 }
 
-function renderDatePicker() {
+function pickQuick(iso) {
   const p = state.pick;
   if (!p) return;
-  const parts = p.month.split("-").map(Number);
-  const year = parts[0], month = parts[1];
-  const firstDow = (new Date(year, month - 1, 1).getDay() + 6) % 7;
-  const daysInMonth = new Date(year, month, 0).getDate();
+  p.year = Number(iso.slice(0, 4));
+  p.month = Number(iso.slice(5, 7));
+  p.step = "day";
+  p.selected = iso;
+  renderDatePicker();
+}
+
+function pickDayGrid(p) {
+  const firstDow = (new Date(p.year, p.month - 1, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(p.year, p.month, 0).getDate();
   let cells = "";
   for (let i = 0; i < firstDow; i++) cells += '<span class="cal-day empty"></span>';
   for (let day = 1; day <= daysInMonth; day++) {
-    const ds = `${year}-${pad2(month)}-${pad2(day)}`;
+    const ds = `${p.year}-${pad2(p.month)}-${pad2(day)}`;
     const cls = ["cal-day"];
-    if (ds === p.current) cls.push("today");   // текущая дата заказа — зелёная цифра
     if (ds === p.selected) cls.push("active");
-    cells += `<button class="${cls.join(" ")}" data-date="${ds}"><span class="cal-num">${day}</span></button>`;
+    if (ds === p.current) cls.push("today");
+    cells += `<button type="button" class="${cls.join(" ")}" data-date="${ds}"><span class="cal-num">${day}</span></button>`;
   }
+  return `<div class="cal-dow">${CAL_DOW.map(t => `<span>${t}</span>`).join("")}</div>
+    <div class="cal-grid">${cells}</div>`;
+}
+
+function renderDatePicker() {
+  const p = state.pick;
+  if (!p) return;
   const picker = document.getElementById("datePicker");
-  picker.innerHTML = `
-    <div class="cal-head">
-      <button class="month-arrow" data-cal="prev" aria-label="Предыдущий месяц">‹</button>
-      <div class="month-label">${esc(monthTitle(p.month))}</div>
-      <button class="month-arrow" data-cal="next" aria-label="Следующий месяц">›</button>
+  const years = p.years.map(y =>
+    `<button type="button" class="pick-year${y === p.year ? " active" : ""}" data-year="${y}">${y}</button>`
+  ).join("");
+  const head = `
+    <div class="pick-quick">
+      <button type="button" data-quick="today">Сегодня</button>
+      <button type="button" data-quick="sat">Ближайшая суббота</button>
     </div>
-    <div class="cal-dow">${CAL_DOW.map(t => `<span>${t}</span>`).join("")}</div>
-    <div class="cal-grid">${cells}</div>
-    <div class="date-hint">Сейчас: ${esc(formatEventDate(p.current) || "—")}</div>`;
-  picker.querySelector('[data-cal="prev"]').addEventListener("click", () => shiftPickMonth(-1));
-  picker.querySelector('[data-cal="next"]').addEventListener("click", () => shiftPickMonth(1));
-  picker.querySelectorAll(".cal-day[data-date]").forEach(btn => {
-    btn.addEventListener("click", () => {
+    <div class="pick-years">${years}</div>
+    <div class="pick-years-more"><button type="button" class="pick-more" id="pickOtherYear">другой год</button></div>
+    <div class="pick-custom" id="pickCustom" ${p.customYear ? "" : "hidden"}>
+      <input id="pickYearInput" type="number" inputmode="numeric" min="1990" max="2100" placeholder="${p.year}">
+      <button type="button" class="pick-custom-ok" id="pickYearOk">ОК</button>
+    </div>`;
+  const body = p.step === "month"
+    ? `<div class="pick-label">Месяц</div>
+       <div class="pick-months">${MONTHS_RU.map((m, i) =>
+         `<button type="button" class="pick-month${i + 1 === p.month ? " active" : ""}" data-month="${i + 1}">${m}</button>`
+       ).join("")}</div>`
+    : `<div class="pick-month-head">
+         <div class="name">${esc(MONTHS_RU[p.month - 1])} ${p.year}</div>
+         <button type="button" id="pickBack">изменить</button>
+       </div>${pickDayGrid(p)}`;
+  picker.innerHTML = `${head}${body}<div class="date-hint">Сейчас: ${esc(formatEventDate(p.current) || "—")}</div>`;
+
+  picker.querySelector('[data-quick="today"]').addEventListener("click", () => pickQuick(pickerToday().iso));
+  picker.querySelector('[data-quick="sat"]').addEventListener("click", () => pickQuick(nextSaturdayIso()));
+  picker.querySelectorAll("[data-year]").forEach(btn => btn.addEventListener("click", () => {
+    p.year = Number(btn.dataset.year);
+    p.step = "month";
+    p.customYear = false;
+    renderDatePicker();
+  }));
+  picker.querySelector("#pickOtherYear").addEventListener("click", () => {
+    p.customYear = !p.customYear;
+    renderDatePicker();
+    if (p.customYear) document.getElementById("pickYearInput")?.focus();
+  });
+  picker.querySelector("#pickYearOk")?.addEventListener("click", () => {
+    const raw = Number(document.getElementById("pickYearInput").value);
+    if (!raw || raw < 1990 || raw > 2100) return;
+    p.year = raw;
+    p.customYear = false;
+    p.step = "month";
+    renderDatePicker();
+  });
+  picker.querySelectorAll("[data-month]").forEach(btn => btn.addEventListener("click", () => {
+    p.month = Number(btn.dataset.month);
+    p.step = "day";
+    p.selected = null;
+    renderDatePicker();
+  }));
+  if (p.step === "day") {
+    picker.querySelector("#pickBack")?.addEventListener("click", () => {
+      p.step = "month";
+      renderDatePicker();
+    });
+    picker.querySelectorAll(".cal-day[data-date]").forEach(btn => btn.addEventListener("click", () => {
       p.selected = btn.dataset.date;
       renderDatePicker();
       syncDateConfirm();
-    });
-  });
+    }));
+  }
   syncDateConfirm();
-}
-
-function shiftPickMonth(delta) {
-  const p = state.pick;
-  if (!p) return;
-  const parts = p.month.split("-").map(Number);
-  const d = new Date(parts[0], parts[1] - 1 + delta, 1);
-  p.month = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
-  renderDatePicker();
 }
 
 function syncDateConfirm() {
