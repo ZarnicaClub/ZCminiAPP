@@ -24,6 +24,48 @@ def require_auth(x_telegram_init_data: str | None = Header(default=None)):
         raise HTTPException(status_code=401, detail="unauthorized")
 
 
+def current_user(x_telegram_init_data: str | None = Header(default=None)) -> dict:
+    """Кто пришёл: объект user из подписанного Telegram initData.
+
+    401 — только если подпись неверная (или токен задан, а initData нет).
+    В dev-режиме (токен бота не задан) возвращает пометку dev.
+    """
+    if not TELEGRAM_BOT_TOKEN:
+        return {"id": None, "first_name": "dev", "dev": True}
+    user = auth.init_data_user(x_telegram_init_data or "", TELEGRAM_BOT_TOKEN)
+    if not user:
+        raise HTTPException(status_code=401, detail="unauthorized")
+    return user
+
+
+def require_editor(user: dict = Depends(current_user)) -> dict:
+    """Право вносить правки: только белый список crm_editors (закрыто по умолчанию)."""
+    if user.get("dev"):
+        return user
+    if not repo.is_editor(user.get("id")):
+        raise HTTPException(status_code=403, detail="editing_forbidden")
+    return user
+
+
+@app.get("/api/me")
+def api_me(user: dict = Depends(current_user)):
+    """Кто я и можно ли мне править — для интерфейса и проверки доступа."""
+    row = None
+    if not user.get("dev"):
+        try:
+            row = repo.get_editor(user["id"])
+        except Exception:
+            row = None  # таблицы ещё нет — прав нет, чтение работает
+    name = " ".join(p for p in (user.get("first_name"), user.get("last_name")) if p)
+    return {
+        "id": user.get("id"),
+        "name": name,
+        "username": user.get("username"),
+        "can_edit": bool(user.get("dev") or row),
+        "role": "dev" if user.get("dev") else (row.get("role") if row else None),
+    }
+
+
 @app.get("/healthz")
 def healthz():
     return {

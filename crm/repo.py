@@ -306,3 +306,40 @@ def set_call_order(call_id, order_id):
         )
         conn.commit()
         return cur.rowcount
+
+
+# --- права на правки: белый список Telegram-ID (таблица crm_editors) ---
+
+def get_editor(telegram_id):
+    """Строка доступа для Telegram-ID или None (нет строки / отключён)."""
+    rows = _query(
+        """
+        SELECT telegram_id, display_name, username, role, is_active, added_by, added_at
+        FROM crm_editors
+        WHERE telegram_id = %s AND is_active = true
+        """,
+        (telegram_id,),
+    )
+    return rows[0] if rows else None
+
+
+def is_editor(telegram_id) -> bool:
+    """Может ли этот Telegram-ID вносить правки. Закрыто по умолчанию."""
+    if telegram_id is None:
+        return False
+    try:
+        return get_editor(telegram_id) is not None
+    except Exception:
+        # Нет таблицы/базы — писать нельзя (fail-closed), чтение не страдает.
+        return False
+
+
+def list_editors():
+    """Весь список доступов (включая отключённых) — для раздела «Доступы»."""
+    return _query(
+        """
+        SELECT telegram_id, display_name, username, role, is_active, added_by, added_at
+        FROM crm_editors
+        ORDER BY added_at
+        """
+    )
