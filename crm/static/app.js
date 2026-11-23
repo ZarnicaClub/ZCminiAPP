@@ -17,10 +17,13 @@ const state = {
   callsDate: null,
   bsoFilter: "all",
   bsoDate: null,
+  canEdit: false,
+  pick: null,
 };
 
 const dialog = document.getElementById("orderDialog");
 const detailEl = document.getElementById("detail");
+const dateDialog = document.getElementById("dateDialog");
 
 const VIEW_SECTIONS = {
   start: "screen-start",
@@ -605,7 +608,7 @@ async function openDetail(o) {
     <div class="key-block">
       <div>
         <div class="key-label">Дата</div>
-        <div class="key-value">${esc(formatEventDate(e.date) || "—")}</div>
+        <div class="key-value${state.canEdit && e.date ? " key-editable" : ""}"${state.canEdit && e.date ? ' id="editDateBtn" role="button" tabindex="0"' : ""}>${esc(formatEventDate(e.date) || "—")}${state.canEdit && e.date ? ' <span class="edit-pencil">✎</span>' : ""}</div>
       </div>
       <div>
         <div class="key-label">Сеанс</div>
@@ -638,9 +641,11 @@ async function openDetail(o) {
       <div id="callsList" class="calls-list"><div class="empty">Загрузка звонков…</div></div>
     </section>
   `;
-  dialog.showModal();
+  if (!dialog.open) dialog.showModal();
   wireCopyButtons();
   loadOrderBso(o.order_id);
+  const editDateBtn = document.getElementById("editDateBtn");
+  if (editDateBtn) editDateBtn.addEventListener("click", () => openDatePicker(o));
 
   try {
     const r = await fetch(`/api/orders/${encodeURIComponent(o.order_id)}/calls`, {cache:"no-store", headers: authHeaders()});
@@ -1184,12 +1189,125 @@ function loadWeekendSummary() {
   }
 }
 
+/* ---------- правка даты игры: только для редактора ---------- */
+
+async function loadMe() {
+  try {
+    const r = await fetch("/api/me", {cache: "no-store", headers: authHeaders()});
+    if (!r.ok) return;
+    const me = await r.json();
+    state.canEdit = !!me.can_edit;
+  } catch (e) { /* не смогли узнать — дата остаётся обычным текстом */ }
+}
+
+function openDatePicker(order) {
+  const cur = String(order?.event?.date || "").slice(0, 10);
+  state.pick = {
+    order,
+    current: cur,
+    month: cur ? cur.slice(0, 7) : monthKeyOf(todayMsk()),
+    selected: null,
+  };
+  renderDatePicker();
+  if (!dateDialog.open) dateDialog.showModal();
+}
+
+function renderDatePicker() {
+  const p = state.pick;
+  if (!p) return;
+  const parts = p.month.split("-").map(Number);
+  const year = parts[0], month = parts[1];
+  const firstDow = (new Date(year, month - 1, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  let cells = "";
+  for (let i = 0; i < firstDow; i++) cells += '<span class="cal-day empty"></span>';
+  for (let day = 1; day <= daysInMonth; day++) {
+    const ds = `${year}-${pad2(month)}-${pad2(day)}`;
+    const cls = ["cal-day"];
+    if (ds === p.current) cls.push("today");   // текущая дата заказа — зелёная цифра
+    if (ds === p.selected) cls.push("active");
+    cells += `<button class="${cls.join(" ")}" data-date="${ds}"><span class="cal-num">${day}</span></button>`;
+  }
+  const picker = document.getElementById("datePicker");
+  picker.innerHTML = `
+    <div class="cal-head">
+      <button class="month-arrow" data-cal="prev" aria-label="Предыдущий месяц">‹</button>
+      <div class="month-label">${esc(monthTitle(p.month))}</div>
+      <button class="month-arrow" data-cal="next" aria-label="Следующий месяц">›</button>
+    </div>
+    <div class="cal-dow">${CAL_DOW.map(t => `<span>${t}</span>`).join("")}</div>
+    <div class="cal-grid">${cells}</div>
+    <div class="date-hint">Сейчас: ${esc(formatEventDate(p.current) || "—")}</div>`;
+  picker.querySelector('[data-cal="prev"]').addEventListener("click", () => shiftPickMonth(-1));
+  picker.querySelector('[data-cal="next"]').addEventListener("click", () => shiftPickMonth(1));
+  picker.querySelectorAll(".cal-day[data-date]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      p.selected = btn.dataset.date;
+      renderDatePicker();
+      syncDateConfirm();
+    });
+  });
+  syncDateConfirm();
+}
+
+function shiftPickMonth(delta) {
+  const p = state.pick;
+  if (!p) return;
+  const parts = p.month.split("-").map(Number);
+  const d = new Date(parts[0], parts[1] - 1 + delta, 1);
+  p.month = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+  renderDatePicker();
+}
+
+function syncDateConfirm() {
+  const p = state.pick;
+  const box = document.getElementById("dateConfirm");
+  const save = document.getElementById("dateSave");
+  if (!p || !p.selected) { box.hidden = true; save.disabled = true; return; }
+  box.hidden = false;
+  const same = p.selected === p.current;
+  document.getElementById("dateConfirmText").textContent = same
+    ? `Эта дата уже стоит: ${formatEventDate(p.selected)}`
+    : `Изменить дату игры: ${formatEventDate(p.current) || "—"} → ${formatEventDate(p.selected)}?`;
+  save.disabled = same;
+}
+
+async function savePickedDate() {
+  const p = state.pick;
+  const save = document.getElementById("dateSave");
+  if (!p || !p.selected || save.disabled) return;
+  save.disabled = true;
+  try {
+    const r = await fetch(`/api/orders/${encodeURIComponent(p.order.order_id)}/date`, {
+      method: "PATCH",
+      headers: {...authHeaders(), "Content-Type": "application/json"},
+      body: JSON.stringify({date: p.selected}),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const data = await r.json();
+    const newDate = data.new_date || p.selected;
+    if (p.order.event) p.order.event.date = newDate;
+    const mine = state.orders.find(x => String(x.order_id) === String(p.order.order_id));
+    if (mine && mine.event) mine.event.date = newDate;
+    dateDialog.close();
+    showCopyToast("Дата изменена");
+    if (dialog.open) openDetail(p.order);
+    if (state.view === "orders") renderOrders();
+    if (state.view === "schedule") renderSchedule();
+    if (state.view === "clients") renderClients();
+  } catch (e) {
+    showCopyToast("Не удалось сохранить дату");
+    save.disabled = false;
+  }
+}
+
 async function init() {
   const now = new Date();
   state.selectedDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   state.callsDate = isoDate(new Date());
 
   await Promise.all([
+    loadMe(),
     loadOrdersData().catch(() => {}),
     loadClientsData().catch(() => {}),
     loadBsoData().catch(() => {}),
@@ -1243,5 +1361,12 @@ document.querySelectorAll("#bsoFilterRow .chip").forEach(btn => {
 
 document.getElementById("closeDialog").addEventListener("click", () => dialog.close());
 dialog.addEventListener("click", e => { if (e.target === dialog) dialog.close(); });
+
+document.getElementById("closeDateDialog").addEventListener("click", () => dateDialog.close());
+document.getElementById("dateCancel").addEventListener("click", () => {
+  if (state.pick) { state.pick.selected = null; renderDatePicker(); }
+});
+document.getElementById("dateSave").addEventListener("click", savePickedDate);
+dateDialog.addEventListener("click", e => { if (e.target === dateDialog) dateDialog.close(); });
 
 init();

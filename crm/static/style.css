@@ -174,6 +174,11 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .key-block{background:var(--bg);border-radius:14px;padding:14px 15px;display:grid;gap:12px;margin-bottom:9px}
 .key-label{font-size:11px;color:var(--muted)}
 .key-value{font-size:20px;font-weight:650;line-height:1.25;margin-top:3px}
+/* дата, которую можно поправить: подчёркивание и карандаш, без кнопки */
+.key-editable{display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+ border-bottom:1px dashed rgba(0,0,0,.28);padding-bottom:1px}
+.key-editable:active{color:var(--green-dark)}
+.edit-pencil{font-size:13px;color:var(--muted);font-weight:400}
 .key-qty{font-size:32px;font-weight:800;line-height:1.05;margin-top:2px}
 .item-copy{position:relative;cursor:pointer}
 .item-copy:active{background:var(--green-soft)}
@@ -320,6 +325,20 @@ transition:background 110ms var(--ease-out),color 110ms var(--ease-out)}
 .cal-dot{width:6px;height:6px;border-radius:50%;margin-top:2px;background:transparent}
 .cal-dot.has{background:var(--green)}
 .cal-day.active .cal-dot.has{background:#fff}
+/* шторка правки даты (снизу, поверх карточки заказа) */
+dialog.sheet{width:100%;max-width:100%;margin:0;position:fixed;inset:auto 0 0 0;border-radius:18px 18px 0 0}
+.sheet-body{background:var(--card);padding:16px 18px calc(16px + env(safe-area-inset-bottom))}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.sheet-title{font-size:17px;font-weight:750}
+.sheet-head .close{position:static;top:auto;right:auto;line-height:1}
+.date-hint{font-size:13px;color:var(--muted);margin-top:10px}
+.date-confirm{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+.date-confirm-text{font-size:14px;line-height:1.4;margin-bottom:10px}
+.date-confirm-actions{display:flex;gap:8px}
+.btn-primary,.btn-ghost{flex:1;min-height:46px;border-radius:12px;border:1px solid var(--line);
+ font-size:15px;font-weight:650;background:var(--card);color:var(--text)}
+.btn-primary{background:var(--green);border-color:var(--green);color:#fff}
+.btn-primary:disabled{opacity:.45}
 /* БСО в карточке заказа: блок появляется сам, когда бланк заведён */
 .bso-inline{background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:12px;display:grid;gap:6px}
 .bso-inline-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding-bottom:7px;border-bottom:1px dashed var(--line)}

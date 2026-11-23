@@ -4,8 +4,10 @@
 templates/static файлов в контейнере.
 """
 import os
+import re
+from datetime import date
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 
 from crm import auth, repo
@@ -15,6 +17,8 @@ from shared.health import check_db, check_s3
 app = FastAPI(title="crm-miniapp", version="0.1.0")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def require_auth(x_telegram_init_data: str | None = Header(default=None)):
@@ -63,6 +67,39 @@ def api_me(user: dict = Depends(current_user)):
         "username": user.get("username"),
         "can_edit": bool(user.get("dev") or row),
         "role": "dev" if user.get("dev") else (row.get("role") if row else None),
+    }
+
+
+@app.patch("/api/orders/{order_id}/date")
+def api_edit_order_date(
+    order_id: str,
+    payload: dict = Body(...),
+    user: dict = Depends(require_editor),
+):
+    """Правка даты игры: только редактор из crm_editors.
+
+    400 — дата не в формате ГГГГ-ММ-ДД; 404 — заказа нет.
+    Дата меняется в orders.order_date (вебхук Тильды приходит один раз),
+    каждая правка пишется в журнал order_edits.
+    """
+    raw = payload.get("date") if isinstance(payload, dict) else None
+    if not isinstance(raw, str) or not _DATE_RE.match(raw):
+        raise HTTPException(status_code=400, detail="invalid_date")
+    try:
+        new_date = date.fromisoformat(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid_date")
+    if not (1990 <= new_date.year <= 2100):
+        raise HTTPException(status_code=400, detail="date_out_of_range")
+    result = repo.edit_order_date(order_id, new_date, user.get("id"))
+    if result is None:
+        raise HTTPException(status_code=404, detail="order_not_found")
+    return {
+        "ok": True,
+        "order_id": order_id,
+        "old_date": result["old"].isoformat() if result["old"] else None,
+        "new_date": raw,
+        "changed": result["changed"],
     }
 
 

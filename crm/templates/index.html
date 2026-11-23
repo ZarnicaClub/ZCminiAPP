@@ -133,6 +133,24 @@
   </div>
 </dialog>
 
+<!-- Правка даты игры: выезжает снизу по тапу на дату в карточке заказа -->
+<dialog id="dateDialog" class="sheet">
+  <div class="sheet-body">
+    <div class="sheet-head">
+      <div class="sheet-title">Дата игры</div>
+      <button class="close" id="closeDateDialog">×</button>
+    </div>
+    <div id="datePicker"></div>
+    <div class="date-confirm" id="dateConfirm" hidden>
+      <div class="date-confirm-text" id="dateConfirmText"></div>
+      <div class="date-confirm-actions">
+        <button class="btn-primary" id="dateSave" type="button">Да</button>
+        <button class="btn-ghost" id="dateCancel" type="button">Нет</button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
 <script src="/static/app.js"></script>
 </body>
 </html>
