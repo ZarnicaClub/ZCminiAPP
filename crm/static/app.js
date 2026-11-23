@@ -19,11 +19,14 @@ const state = {
   bsoDate: null,
   canEdit: false,
   pick: null,
+  dicts: null,
+  edit: null,
 };
 
 const dialog = document.getElementById("orderDialog");
 const detailEl = document.getElementById("detail");
 const dateDialog = document.getElementById("dateDialog");
+const editDialog = document.getElementById("editDialog");
 
 const VIEW_SECTIONS = {
   start: "screen-start",
@@ -599,7 +602,7 @@ async function openDetail(o) {
 
   detailEl.innerHTML = `
     <div class="detail-title">${esc(c.name || "Заказ")}</div>
-    <div class="detail-subtitle">Карточка заказа</div>
+    <div class="detail-subtitle">Карточка заказа${state.canEdit ? ' <button class="pencil-sub" id="editOrderBtn" type="button" aria-label="Изменить заказ">✎</button>' : ""}</div>
     <div class="detail-status">
       ${sum ? `<span class="amount-pill">${esc(sum)}</span>` : `<span class="status">${esc(o.status || "—")}</span>`}
       ${p.transaction_id ? `<span class="txn-id">Номер транзакции ${esc(p.transaction_id)}</span>` : ""}
@@ -626,8 +629,16 @@ async function openDetail(o) {
 
     <div class="grid">
       <div class="item item-copy" data-copy="${esc(o.order_id)}"><div class="label">Заказ</div><div class="value">${esc(o.order_id)}</div></div>
-      <div class="item"><div class="label">Размещение</div><div class="value">${esc(e.tent || "—")}</div></div>
+      <div class="item"><div class="label">Размещение</div><div class="value">${esc(prettyTent(e.tent))}</div></div>
     </div>
+
+    <section class="hist" id="orderHistory" hidden>
+      <div class="hist-head">
+        <span class="hist-title">История</span>
+        <button type="button" class="hist-more" id="histToggle" hidden></button>
+      </div>
+      <div id="histRows"></div>
+    </section>
 
     <div class="actions">
       ${c.phone ? `<button class="action" type="button" data-copy="${esc(phoneLink(c.phone))}">📞 ${esc(phonePretty(c.phone))}</button>` : ""}
@@ -646,6 +657,9 @@ async function openDetail(o) {
   loadOrderBso(o.order_id);
   const editDateBtn = document.getElementById("editDateBtn");
   if (editDateBtn) editDateBtn.addEventListener("click", () => openDatePicker(o));
+  const editOrderBtn = document.getElementById("editOrderBtn");
+  if (editOrderBtn) editOrderBtn.addEventListener("click", () => openEditSheet(o));
+  loadOrderHistory(o.order_id);
 
   try {
     const r = await fetch(`/api/orders/${encodeURIComponent(o.order_id)}/calls`, {cache:"no-store", headers: authHeaders()});
@@ -1366,6 +1380,257 @@ async function savePickedDate() {
   }
 }
 
+/* ---------- подписи значений из базы ---------- */
+
+function prettySession(v) {
+  let s = String(v || "").trim().replace(/^[-–—\s]+/, "").replace(/[;\s]+$/, "");
+  s = s.replace(/\s*с\s*(\d{1,2}:\d{2})\s*до\s*(\d{1,2}:\d{2})/i, " · $1–$2");
+  return s || "—";
+}
+
+function prettyGame(v) {
+  let s = String(v || "").trim();
+  // длинную служебную пометку сокращаем, но не выкидываем: иначе два кидбола выглядят одинаково
+  s = s.replace(/\(наличие услуги уточняйте у менеджера\)/i, "(уточнять у менеджера)");
+  return s || "—";
+}
+
+function prettyTent(v) {
+  let s = String(v || "").trim();
+  if (!s) return "—";
+  s = s.replace(/\s*в платной зоне\s*$/i, "").replace(/\s*человек\s*$/i, "").trim();
+  s = s.replace(/^Шатер зеленый/i, "Шатёр зелёный");
+  return s;
+}
+
+const FIELD_LABELS = {order_date: "дата", session_time: "сеанс", qty: "игроков", game: "тариф", tent: "размещение"};
+
+function histValue(field, value) {
+  if (value == null || value === "") return "—";
+  if (field === "order_date") return formatEventDate(value);
+  if (field === "session_time") return prettySession(value);
+  if (field === "game") return prettyGame(value);
+  if (field === "tent") return prettyTent(value);
+  return String(value);
+}
+
+function histWhen(ts) {
+  const d = parseTs(ts);
+  if (!d) return "";
+  const p = n => String(n).padStart(2, "0");
+  const s = new Date(d.getTime() + MSK_OFFSET_MS);
+  return `${p(s.getUTCDate())}.${p(s.getUTCMonth() + 1)} · ${p(s.getUTCHours())}:${p(s.getUTCMinutes())}`;
+}
+
+/* ---------- история изменений заказа (видна всем) ---------- */
+
+async function loadOrderHistory(orderId) {
+  const box = document.getElementById("orderHistory");
+  if (!box) return;
+  let edits = [];
+  try {
+    const r = await fetch(`/api/orders/${encodeURIComponent(orderId)}/edits`, {cache: "no-store", headers: authHeaders()});
+    if (!r.ok) return;
+    edits = (await r.json()).edits || [];
+  } catch (e) { return; }
+  if (!edits.length) { box.hidden = true; return; }
+
+  // пачка правок (одно сохранение) = одна строка: группируем по времени и автору
+  const groups = [];
+  edits.forEach(ed => {
+    const key = `${ed.edited_at}|${ed.edited_by}`;
+    let g = groups.find(x => x.key === key);
+    if (!g) {
+      g = {key, when: histWhen(ed.edited_at), who: ed.editor_name || "", items: []};
+      groups.push(g);
+    }
+    g.items.push(ed);
+  });
+
+  const more = document.getElementById("histToggle");
+  const render = (all) => {
+    const shown = all ? groups : groups.slice(0, 1);
+    document.getElementById("histRows").innerHTML = shown.map(g => `
+      <div class="hist-row">
+        <span class="hist-when">${esc(g.when)}</span>
+        <span class="hist-who">${esc(g.who)}</span>
+        <span class="hist-diff">${g.items.map(ed =>
+          `${esc(FIELD_LABELS[ed.field] || ed.field)}: <s>${esc(histValue(ed.field, ed.old_value))}</s> → ${esc(histValue(ed.field, ed.new_value))}`
+        ).join("; ")}</span>
+      </div>`).join("");
+  };
+  box.hidden = false;
+  render(false);
+  if (groups.length > 1) {
+    let expanded = false;
+    more.hidden = false;
+    more.textContent = `все ${groups.length}`;
+    more.onclick = () => {
+      expanded = !expanded;
+      render(expanded);
+      more.textContent = expanded ? "свернуть" : `все ${groups.length}`;
+    };
+  } else {
+    more.hidden = true;
+  }
+}
+
+/* ---------- изменение заказа: сеанс, игроки, тариф, размещение ---------- */
+
+async function openEditSheet(order) {
+  const e = order?.event || {};
+  const base = {
+    session_time: e.session || "",
+    qty: e.qty == null ? "" : String(e.qty),
+    game: e.game || "",
+    tent: e.tent || "",
+  };
+  state.edit = {order, ...base, saved: {...base}};
+  if (!state.dicts) {
+    try {
+      const r = await fetch("/api/dictionaries", {cache: "no-store", headers: authHeaders()});
+      if (r.ok) state.dicts = await r.json();
+    } catch (err) { /* без словарей покажем только текущие значения */ }
+  }
+  renderEditForm();
+  if (!editDialog.open) editDialog.showModal();
+}
+
+function editChips(field, values, pretty) {
+  return `<div class="chips">${values.map(v =>
+    `<button type="button" class="chip-opt${state.edit[field] === v ? " active" : ""}" data-field="${field}" data-value="${esc(v)}">${esc(pretty(v))}</button>`
+  ).join("")}</div>`;
+}
+
+function renderEditForm() {
+  const d = state.dicts || {};
+  const sessions = (d.session_time || []).map(x => x.value);
+  const games = (d.game || []).map(x => x.value);
+  const tents = (d.tent || []).map(x => x.value);
+  const qtys = (d.qty || []).map(x => x.value).slice(0, 5);
+
+  const groups = {};
+  games.forEach(g => {
+    const key = (g.match(/^[А-Яа-яЁё]+/) || ["Прочее"])[0];
+    (groups[key] = groups[key] || []).push(g);
+  });
+  const gameHtml = Object.entries(groups).map(([k, list]) => `
+    <div class="tariff-group">${esc(k)}</div>
+    ${list.map(g => `<button type="button" class="tariff-opt${state.edit.game === g ? " active" : ""}" data-field="game" data-value="${esc(g)}">
+        <span>${esc(prettyGame(g))}</span><span class="mark">${state.edit.game === g ? "✓" : ""}</span></button>`).join("")}
+  `).join("");
+
+  document.getElementById("editForm").innerHTML = `
+    <div class="edit-sec">
+      <div class="edit-label">Сеанс</div>
+      ${editChips("session_time", sessions, prettySession)}
+    </div>
+    <div class="edit-sec">
+      <div class="edit-label">Игроков</div>
+      <div class="stepper">
+        <button type="button" data-step="-1">−</button>
+        <input class="val" id="editQty" type="number" inputmode="numeric" min="1" max="500" placeholder="—" value="${esc(state.edit.qty)}">
+        <button type="button" data-step="1">+</button>
+      </div>
+      <div class="quick-nums">${qtys.map(q => `<button type="button" data-qty="${esc(q)}">${esc(q)}</button>`).join("")}</div>
+    </div>
+    <div class="edit-sec">
+      <div class="edit-label">Тариф</div>
+      ${gameHtml}
+    </div>
+    <div class="edit-sec">
+      <div class="edit-label">Размещение</div>
+      ${editChips("tent", tents, prettyTent)}
+    </div>`;
+
+  document.querySelectorAll("#editForm [data-field]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.edit[btn.dataset.field] = btn.dataset.value;
+      renderEditForm();
+    });
+  });
+  document.querySelectorAll("#editForm [data-step]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const input = document.getElementById("editQty");
+      const cur = Number(input.value || 0) + Number(btn.dataset.step);
+      input.value = String(Math.max(1, Math.min(500, cur || 1)));
+      state.edit.qty = input.value;
+      updateEditSummary();
+    });
+  });
+  document.querySelectorAll("#editForm [data-qty]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      state.edit.qty = btn.dataset.qty;
+      document.getElementById("editQty").value = btn.dataset.qty;
+      updateEditSummary();
+    });
+  });
+  const input = document.getElementById("editQty");
+  if (input) input.addEventListener("input", () => { state.edit.qty = input.value; updateEditSummary(); });
+  updateEditSummary();
+}
+
+function editChanges() {
+  const s = state.edit;
+  if (!s) return {};
+  const base = s.saved;
+  const out = {};
+  ["session_time", "game", "tent"].forEach(f => {
+    if (String(s[f] || "") !== String(base[f] || "")) out[f] = s[f];
+  });
+  const qty = String(s.qty || "").trim();
+  if (qty && qty !== String(base.qty || "")) out.qty = qty;
+  return out;
+}
+
+function updateEditSummary() {
+  const changes = editChanges();
+  const labels = {session_time: "Сеанс", qty: "Игроков", game: "Тариф", tent: "Размещение"};
+  const fmt = {session_time: prettySession, qty: x => String(x), game: prettyGame, tent: prettyTent};
+  const parts = Object.entries(changes).map(([f, v]) => {
+    const old = state.edit.saved[f];
+    return `${labels[f]}: ${esc(fmt[f](old) || "—")} → ${esc(fmt[f](v) || "—")}`;
+  });
+  const sum = document.getElementById("editSummary");
+  const save = document.getElementById("editSave");
+  sum.innerHTML = parts.length ? parts.join(" · ") : "Изменений нет";
+  save.disabled = !parts.length;
+}
+
+async function saveEditFields() {
+  const changes = editChanges();
+  const save = document.getElementById("editSave");
+  if (!Object.keys(changes).length || save.disabled) return;
+  save.disabled = true;
+  const order = state.edit.order;
+  try {
+    const r = await fetch(`/api/orders/${encodeURIComponent(order.order_id)}/fields`, {
+      method: "PATCH",
+      headers: {...authHeaders(), "Content-Type": "application/json"},
+      body: JSON.stringify(changes),
+    });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    await r.json();
+    if (order.event) {
+      if (changes.session_time !== undefined) order.event.session = changes.session_time;
+      if (changes.qty !== undefined) order.event.qty = changes.qty;
+      if (changes.game !== undefined) order.event.game = changes.game;
+      if (changes.tent !== undefined) order.event.tent = changes.tent;
+    }
+    const mine = state.orders.find(x => String(x.order_id) === String(order.order_id));
+    if (mine && mine.event) Object.assign(mine.event, order.event || {});
+    editDialog.close();
+    showCopyToast("Заказ изменён");
+    if (dialog.open) openDetail(order);
+    if (state.view === "orders") renderOrders();
+    if (state.view === "schedule") renderSchedule();
+    if (state.view === "clients") renderClients();
+  } catch (e) {
+    showCopyToast("Не удалось сохранить");
+    save.disabled = false;
+  }
+}
+
 async function init() {
   const now = new Date();
   state.selectedDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -1426,6 +1691,10 @@ document.querySelectorAll("#bsoFilterRow .chip").forEach(btn => {
 
 document.getElementById("closeDialog").addEventListener("click", () => dialog.close());
 dialog.addEventListener("click", e => { if (e.target === dialog) dialog.close(); });
+
+document.getElementById("closeEditDialog").addEventListener("click", () => editDialog.close());
+document.getElementById("editSave").addEventListener("click", saveEditFields);
+editDialog.addEventListener("click", e => { if (e.target === editDialog) editDialog.close(); });
 
 document.getElementById("closeDateDialog").addEventListener("click", () => dateDialog.close());
 document.getElementById("dateCancel").addEventListener("click", () => {

@@ -383,3 +383,97 @@ def edit_order_date(order_id, new_date, edited_by):
         conn.commit()
         return {"old": old, "new": new_date, "changed": True}
 
+
+# --- словари значений для выбора (из того, что уже есть в заказах) ---
+
+def dictionaries():
+    """Значения session_time / game / tent, которые уже встречались, по частоте."""
+    rows = _query(
+        """
+        SELECT 'session_time' AS field, session_time AS value, count(*) AS n
+          FROM orders WHERE coalesce(session_time, '') <> '' GROUP BY 1, 2
+        UNION ALL
+        SELECT 'game', game, count(*) FROM orders WHERE coalesce(game, '') <> '' GROUP BY 1, 2
+        UNION ALL
+        SELECT 'tent', tent, count(*) FROM orders WHERE coalesce(tent, '') <> '' GROUP BY 1, 2
+        UNION ALL
+        SELECT 'qty', qty, count(*) FROM orders WHERE coalesce(qty, '') <> '' GROUP BY 1, 2
+        ORDER BY field, n DESC, value
+        """
+    )
+    out = {"session_time": [], "game": [], "tent": [], "qty": []}
+    for r in rows:
+        out.setdefault(r["field"], []).append({"value": r["value"], "count": int(r["n"])})
+    return out
+
+
+# --- история правок заказа ---
+
+EDIT_FIELDS = ("session_time", "qty", "game", "tent")
+
+
+def order_edits(order_id, limit=200):
+    """История правок заказа (свежие сверху) с именем редактора."""
+    rows = _query(
+        """
+        SELECT oe.id, oe.order_id, oe.field, oe.old_value, oe.new_value,
+               oe.edited_by, oe.edited_at,
+               coalesce(e.display_name, 'ID ' || oe.edited_by::text) AS editor_name
+          FROM order_edits oe
+          LEFT JOIN crm_editors e ON e.telegram_id = oe.edited_by
+         WHERE oe.order_id = %s
+         ORDER BY oe.edited_at DESC, oe.id DESC
+         LIMIT %s
+        """,
+        (order_id, limit),
+    )
+    return [serialize_row(r) for r in rows]
+
+
+def edit_order_fields(order_id, changes, edited_by):
+    """Меняет сеанс/игроков/тариф/размещение и пишет по строке в журнал.
+
+    changes — dict с любыми из EDIT_FIELDS (значения уже проверены вызывающим).
+    Возвращает список фактических изменений [{field, old, new}] или None, если заказа нет.
+    """
+    with pool().connection() as conn:
+        cur = conn.execute(
+            "SELECT session_time, qty, game, tent FROM orders WHERE order_id = %s FOR UPDATE",
+            (order_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        old = dict(zip(EDIT_FIELDS, row))
+        applied = []
+        for field in EDIT_FIELDS:
+            if field not in changes:
+                continue
+            new = changes[field]
+            before = old.get(field)
+            if (before if before is not None else "") == (new if new is not None else ""):
+                continue
+            if str(before if before is not None else "") == str(new):
+                continue
+            conn.execute(
+                f"UPDATE orders SET {field} = %s WHERE order_id = %s",  # field из белого списка
+                (new, order_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO order_edits (order_id, field, old_value, new_value, edited_by)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    order_id,
+                    field,
+                    None if before is None else str(before),
+                    None if new is None else str(new),
+                    edited_by,
+                ),
+            )
+            applied.append({"field": field, "old": before, "new": new})
+        conn.commit()
+        return applied
+
+

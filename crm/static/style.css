@@ -351,6 +351,53 @@ transition:background 110ms var(--ease-out),color 110ms var(--ease-out)}
 .pick-month-head button{border:0;background:none;color:var(--green-dark);font-size:12px;
  font-weight:600;text-decoration:underline;padding:0}
 .cal-day.empty{border-color:transparent;background:transparent}
+/* карандаш сразу после «Карточка заказа» (видит только редактор) */
+.pencil-sub{border:0;background:none;padding:0 2px;margin-left:2px;font-size:15px;line-height:1;
+ color:var(--green-dark);border-bottom:1px dashed rgba(0,0,0,.28);vertical-align:baseline}
+
+/* история изменений заказа — видна всем */
+.hist{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
+.hist-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.hist-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.hist-more{border:0;background:none;padding:0;font-size:12px;font-weight:600;color:var(--green-dark);text-decoration:underline}
+.hist-row{display:flex;gap:7px;align-items:baseline;padding:5px 0;font-size:12.5px;line-height:1.35}
+.hist-when{color:var(--muted);white-space:nowrap}
+.hist-who{font-weight:650;white-space:nowrap}
+.hist-diff{color:var(--text)}
+.hist-diff s{color:#a9aca0}
+
+/* шторка «Изменить заказ» */
+.edit-sec{margin-bottom:14px}
+.edit-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:0 0 7px}
+.chips{display:flex;gap:7px;flex-wrap:wrap}
+.chip-opt{min-height:38px;padding:0 11px;border-radius:10px;border:1px solid var(--line);
+ background:var(--card);font-size:13px;font-weight:600;color:var(--text);text-align:left;line-height:1.2}
+.chip-opt.active{background:var(--green-soft);border-color:var(--green);color:var(--green-dark)}
+.stepper{display:flex;align-items:center;gap:8px}
+.stepper button{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);
+ background:var(--card);font-size:22px;font-weight:600;color:var(--text);line-height:1}
+.stepper .val{flex:1;min-width:0;height:44px;text-align:center;font-size:22px;font-weight:750;
+ border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--text);
+ font-family:inherit;-moz-appearance:textfield}
+.stepper .val::-webkit-outer-spin-button,.stepper .val::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.quick-nums{display:flex;gap:6px;margin-top:7px}
+.quick-nums button{flex:1;min-height:32px;border-radius:9px;border:1px solid var(--line);
+ background:var(--card);font-size:12px;font-weight:600;color:var(--muted)}
+.tariff-group{font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--green-dark);
+ text-transform:uppercase;margin:10px 0 5px}
+.tariff-opt{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;
+ min-height:42px;padding:0 12px;margin-bottom:5px;border-radius:10px;border:1px solid var(--line);
+ background:var(--card);font-size:14px;font-weight:600;color:var(--text);text-align:left}
+.tariff-opt .mark{color:var(--green);font-size:16px;font-weight:800}
+.tariff-opt.active{border-color:var(--green);background:var(--green-soft);color:var(--green-dark)}
+#editDialog .sheet-body{display:flex;flex-direction:column;overflow:hidden}
+#editForm{flex:1 1 auto;min-height:0;overflow:auto;padding-right:2px}
+.save-bar{flex:0 0 auto;background:var(--card);padding-top:10px;border-top:1px solid var(--line);margin-top:8px}
+.save-sum{font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.35}
+.btn-save{width:100%;min-height:46px;border-radius:12px;border:1px solid var(--green);
+ background:var(--green);color:#fff;font-size:15px;font-weight:650}
+.btn-save:disabled{opacity:.45}
+
 /* шторка правки даты (снизу, поверх карточки заказа) */
 dialog.sheet{width:100%;max-width:100%;margin:0;position:fixed;inset:auto 0 0 0;border-radius:18px 18px 0 0;
  max-height:94vh}

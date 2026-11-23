@@ -103,6 +103,56 @@ def api_edit_order_date(
     }
 
 
+@app.get("/api/dictionaries", dependencies=[Depends(require_auth)])
+def api_dictionaries():
+    """Значения для выбора: сеансы, тарифы, размещение — из того, что уже есть в заказах."""
+    return repo.dictionaries()
+
+
+@app.get("/api/orders/{order_id}/edits", dependencies=[Depends(require_auth)])
+def api_order_edits(order_id: str):
+    """История правок заказа — видна всем, кто открывает карточку."""
+    return {"order_id": order_id, "edits": repo.order_edits(order_id)}
+
+
+@app.patch("/api/orders/{order_id}/fields")
+def api_edit_order_fields(
+    order_id: str,
+    payload: dict = Body(...),
+    user: dict = Depends(require_editor),
+):
+    """Правка сеанса, числа игроков, тарифа и размещения — только редактор.
+
+    Сеанс/тариф/размещение принимаются только из существующих значений (словари),
+    игроки — целое число 1..500. По каждому изменённому полю — строка в журнале.
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="invalid_payload")
+    raw = {k: v for k, v in payload.items() if k in repo.EDIT_FIELDS}
+    if not raw:
+        raise HTTPException(status_code=400, detail="nothing_to_change")
+    dicts = repo.dictionaries()
+    changes = {}
+    for field, value in raw.items():
+        if field == "qty":
+            try:
+                num = int(str(value).strip())
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="invalid_qty")
+            if not (1 <= num <= 500):
+                raise HTTPException(status_code=400, detail="invalid_qty")
+            changes[field] = str(num)
+        else:
+            allowed = {d["value"] for d in dicts.get(field, [])}
+            if not isinstance(value, str) or value not in allowed:
+                raise HTTPException(status_code=400, detail=f"invalid_{field}")
+            changes[field] = value
+    applied = repo.edit_order_fields(order_id, changes, user.get("id"))
+    if applied is None:
+        raise HTTPException(status_code=404, detail="order_not_found")
+    return {"ok": True, "order_id": order_id, "changes": applied}
+
+
 @app.get("/healthz")
 def healthz():
     return {
