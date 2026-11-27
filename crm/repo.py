@@ -1,4 +1,5 @@
 """crm: read-only запросы к PostgreSQL + presigned URL."""
+import json
 import os
 from datetime import date, datetime, timedelta, timezone
 
@@ -15,6 +16,14 @@ def _query(sql, params=None):
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(sql, params or ())
             return cur.fetchall()
+
+
+def _execute(sql, params=None) -> int:
+    """Запись: UPDATE/DELETE с коммитом, возвращает число строк."""
+    with pool().connection() as conn:
+        cur = conn.execute(sql, params or ())
+        conn.commit()
+        return cur.rowcount
 
 
 def _tz_from_env():
@@ -75,6 +84,7 @@ def _call_out(row):
     d = serialize_row(row)
     meta = d.pop("metadata", None) or {}
     d["tags"] = meta.get("tags")
+    d["is_spam"] = bool(meta.get("spam"))
     d["audio_url"] = presigned_url(d.get("s3_key"), expires=900)
     return d
 
@@ -220,15 +230,16 @@ def client_calls(client_id):
     return _with_card_tags(calls, _orders_map([c.get("order_id") for c in calls]))
 
 
-def unmatched_calls(limit=200):
+def unmatched_calls(limit=200, include_spam=False):
     rows = _query(
         """
         SELECT id, email_id, order_id, phone, call_datetime, administrator,
                s3_key, duration_seconds, status, metadata
         FROM calls WHERE status = 'unmatched'
+          AND (%s::boolean OR NOT (metadata ? 'spam'))
         ORDER BY call_datetime DESC, id DESC LIMIT %s
         """,
-        (limit,),
+        (bool(include_spam), limit),
     )
     return [_call_out(r) for r in rows]
 
@@ -254,8 +265,12 @@ def _day_bounds(date_str=None):
     return start, end
 
 
-def calls_today(limit=200, date_str=None):
-    """Звонки за указанную дату (или за сегодня) по TZ CALL_TIMEZONE_OFFSET."""
+def calls_today(limit=200, date_str=None, include_spam=False):
+    """Звонки за указанную дату (или за сегодня) по TZ CALL_TIMEZONE_OFFSET.
+
+    Скрытые как спам по умолчанию не отдаём (решение 25.11.2026): из CRM они пропадают,
+    но в базе остаются. include_spam=True — только для редактора (проверка в API).
+    """
     start, end = _day_bounds(date_str)
     rows = _query(
         """
@@ -263,12 +278,26 @@ def calls_today(limit=200, date_str=None):
                mp3_filename, s3_key, duration_seconds, status, created_at, metadata
         FROM calls
         WHERE call_datetime >= %s AND call_datetime < %s
+          AND (%s::boolean OR NOT (metadata ? 'spam'))
         ORDER BY call_datetime DESC, id DESC
         LIMIT %s
         """,
-        (start.isoformat(), end.isoformat(), limit),
+        (start.isoformat(), end.isoformat(), bool(include_spam), limit),
     )
     return [_call_out(r) for r in rows]
+
+
+def spam_count(date_str=None):
+    """Сколько звонков за день скрыто как спам — для переключателя «Показать скрытые (N)»."""
+    start, end = _day_bounds(date_str)
+    rows = _query(
+        """
+        SELECT count(*) AS n FROM calls
+        WHERE call_datetime >= %s AND call_datetime < %s AND metadata ? 'spam'
+        """,
+        (start.isoformat(), end.isoformat()),
+    )
+    return int(rows[0]["n"]) if rows else 0
 
 
 def weekend_headcount():
@@ -306,6 +335,44 @@ def set_call_order(call_id, order_id):
         )
         conn.commit()
         return cur.rowcount
+
+
+def set_call_spam(call_id, hidden=True, user=None):
+    """Скрыть звонок как спам или вернуть в CRM. Из базы запись НЕ удаляем.
+
+    Решения Артёма 25.11.2026: 1В — звонок, привязанный к заказу, скрывать нельзя;
+    2А — право есть только у редактора (проверяет API). Пометка живёт в metadata.spam,
+    поэтому calls_tagger (он дописывает metadata через ||) её не затрёт.
+    """
+    rows = _query("SELECT order_id FROM calls WHERE id = %s", (call_id,))
+    if not rows:
+        return {"status": "not_found"}
+    if rows[0]["order_id"]:
+        return {"status": "linked"}
+
+    if hidden:
+        user = user or {}
+        who = " ".join(p for p in (user.get("first_name"), user.get("last_name")) if p).strip()
+        payload = json.dumps({
+            "at": datetime.now(timezone.utc).isoformat(),
+            "by": user.get("id"),
+            "name": who or user.get("username") or "",
+        }, ensure_ascii=False)
+        _execute(
+            """
+            UPDATE calls
+            SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('spam', %s::jsonb)
+            WHERE id = %s
+            """,
+            (payload, call_id),
+        )
+    else:
+        _execute(
+            "UPDATE calls SET metadata = COALESCE(metadata, '{}'::jsonb) - 'spam' WHERE id = %s",
+            (call_id,),
+        )
+    return {"status": "ok", "hidden": bool(hidden)}
+
 
 
 # --- права на правки: белый список Telegram-ID (таблица crm_editors) ---

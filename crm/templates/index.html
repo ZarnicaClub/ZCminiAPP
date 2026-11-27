@@ -93,6 +93,7 @@
     </header>
     <div id="callsDateStrip" class="day-strip-wrap"></div>
     <div id="callsSummary" class="summary">Загрузка…</div>
+    <div id="callsSpamToggle" class="spam-toggle" hidden></div>
     <section id="callsTodayList" class="orders"></section>
   </section>
 
@@ -166,6 +167,22 @@
   </div>
 </dialog>
 
+<!-- Скрытие спам-звонка: помечаем, из CRM убираем, в базе оставляем -->
+<dialog id="spamDialog" class="sheet">
+  <div class="sheet-body">
+    <div class="sheet-head">
+      <div class="sheet-title">Скрыть звонок как спам?</div>
+      <button class="close" id="closeSpamDialog">×</button>
+    </div>
+    <div class="date-confirm-text">Звонок пропадёт из CRM, но останется в базе. Вернуть можно через «Показать скрытые».</div>
+    <div class="date-confirm-actions">
+      <button class="btn-primary" id="spamConfirm" type="button">Скрыть</button>
+      <button class="btn-ghost" id="spamCancel" type="button">Отмена</button>
+    </div>
+  </div>
+</dialog>
+
 <script src="/static/app.js"></script>
 </body>
 </html>
+

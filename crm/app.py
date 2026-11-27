@@ -208,14 +208,24 @@ def api_client_calls(client_id: int):
     return {"calls": repo.client_calls(client_id)}
 
 
-@app.get("/api/calls/unmatched", dependencies=[Depends(require_auth)])
-def api_unmatched_calls(limit: int = 200):
-    return {"calls": repo.unmatched_calls(limit=min(max(limit, 1), 500))}
+@app.get("/api/calls/unmatched")
+def api_unmatched_calls(limit: int = 200, include_spam: int = 0, user: dict = Depends(current_user)):
+    if include_spam and not (user.get("dev") or repo.is_editor(user.get("id"))):
+        raise HTTPException(status_code=403, detail="editing_forbidden")
+    return {"calls": repo.unmatched_calls(limit=min(max(limit, 1), 500), include_spam=bool(include_spam))}
 
 
-@app.get("/api/calls/today", dependencies=[Depends(require_auth)])
-def api_calls_today(date: str | None = None, limit: int = 200):
-    return {"calls": repo.calls_today(limit=min(max(limit, 1), 500), date_str=date)}
+@app.get("/api/calls/today")
+def api_calls_today(date: str | None = None, limit: int = 200, include_spam: int = 0,
+                    user: dict = Depends(current_user)):
+    # Скрытые как спам звонки видят только редакторы (решение 2А, 25.11.2026).
+    if include_spam and not (user.get("dev") or repo.is_editor(user.get("id"))):
+        raise HTTPException(status_code=403, detail="editing_forbidden")
+    return {
+        "calls": repo.calls_today(limit=min(max(limit, 1), 500), date_str=date,
+                                  include_spam=bool(include_spam)),
+        "spam_count": repo.spam_count(date),
+    }
 
 
 @app.get("/api/summary/weekend", dependencies=[Depends(require_auth)])
@@ -229,3 +239,24 @@ def api_match_call(call_id: int, order_id: str = Query(...)):
     if not updated:
         raise HTTPException(status_code=404, detail="call_not_found")
     return {"status": "ok"}
+
+
+@app.post("/api/calls/{call_id}/spam")
+def api_call_spam(call_id: int, payload: dict | None = Body(default=None),
+                  user: dict = Depends(require_editor)):
+    """Скрыть звонок как спам или вернуть в CRM (данные в базе остаются).
+
+    Звонок, привязанный к заказу, скрывать нельзя (решение 1В, 25.11.2026) — 409.
+    """
+    data = payload or {}
+    hidden = data.get("hidden", True)
+    if not isinstance(hidden, bool):
+        raise HTTPException(status_code=400, detail="invalid_hidden")
+    result = repo.set_call_spam(call_id, hidden=hidden, user=user)
+    status = result.get("status")
+    if status == "not_found":
+        raise HTTPException(status_code=404, detail="call_not_found")
+    if status == "linked":
+        raise HTTPException(status_code=409, detail="call_linked_to_order")
+    return {"status": "ok", "hidden": bool(result.get("hidden", hidden))}
+

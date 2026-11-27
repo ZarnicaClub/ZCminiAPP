@@ -15,6 +15,9 @@ const state = {
   ordersDate: null,
   selectedDate: null,
   callsDate: null,
+  callsIncludeSpam: false,
+  spamCount: 0,
+  spamPending: null,
   bsoFilter: "all",
   bsoDate: null,
   canEdit: false,
@@ -27,6 +30,7 @@ const dialog = document.getElementById("orderDialog");
 const detailEl = document.getElementById("detail");
 const dateDialog = document.getElementById("dateDialog");
 const editDialog = document.getElementById("editDialog");
+const spamDialog = document.getElementById("spamDialog");
 
 const VIEW_SECTIONS = {
   start: "screen-start",
@@ -342,18 +346,30 @@ function callCard(call, options) {
   const info = showClient ? callClientInfo(call) : null;
   const clientName = linked && info ? info.name : "";
   const idxAttr = opts.index != null ? ` data-call-index="${opts.index}"` : "";
+  // Скрыть как спам может только редактор и только звонок без заказа (решения 1В/2А).
+  const canHide = showClient && !call.order_id && state.canEdit && !call.is_spam;
+  const menu = canHide
+    ? `<button class="call-menu" type="button" data-spam-index="${opts.index}" title="Скрыть как спам" aria-label="Действия">⋯</button>`
+    : "";
+  const head = call.is_spam
+    ? `<div class="call-tags"><span class="call-spam-label">🚫 Скрыт как спам</span></div>`
+    : callTagsHtml(call);
+  const restore = call.is_spam && state.canEdit
+    ? `<button class="call-restore" type="button" data-restore-index="${opts.index}">Вернуть в CRM</button>`
+    : "";
   return `
-    <article class="call-card${linked ? " call-card-linked" : ""}"${idxAttr}>
-      ${callTagsHtml(call)}
+    <article class="call-card${linked ? " call-card-linked" : ""}${call.is_spam ? " call-card-spam" : ""}"${idxAttr}>
+      ${head}
       <div class="call-topline">
         <div class="call-date">📞 ${esc(dt || "Дата не указана")}</div>
-        <div class="call-duration">${mm}:${ss}</div>
+        <div class="call-right"><div class="call-duration">${mm}:${ss}</div>${menu}</div>
       </div>
       ${clientName ? `<div class="call-client">👤 ${esc(clientName)}</div>` : ""}
       <div class="call-admin">${esc(call.administrator || "Администратор не указан")}</div>
       <div class="call-phone">${esc(call.phone || "")}</div>
       ${call.audio_url ? `<audio class="call-audio" controls preload="none" src="${esc(call.audio_url)}"></audio>
       <button class="call-link" type="button" data-audio-link="${esc(permanentAudioLink(call.audio_url))}">🔗 Ссылка на запись</button>` : `<div class="call-unavailable">MP3 недоступен</div>`}
+      ${restore}
     </article>
   `;
 }
@@ -1007,6 +1023,7 @@ function renderCallsToday() {
   const summary = document.getElementById("callsSummary");
   const calls = state.callsToday || [];
   const label = callsDateLabel();
+  renderCallsSpamToggle();
   if (!calls.length) {
     summary.textContent = `Звонков за ${label}: 0`;
     box.innerHTML = `<div class="empty">Звонков за ${label} нет</div>`;
@@ -1015,10 +1032,24 @@ function renderCallsToday() {
   summary.textContent = `Звонков за ${label}: ${calls.length}`;
   box.innerHTML = calls.map((c, i) => callCard(c, { showClient: true, index: i })).join("");
   initCallCards(box, calls);
+  box.querySelectorAll("[data-spam-index]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      const call = calls[Number(btn.dataset.spamIndex)];
+      if (call) openSpamDialog(call);
+    });
+  });
+  box.querySelectorAll("[data-restore-index]").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      const call = calls[Number(btn.dataset.restoreIndex)];
+      if (call) setCallSpam(call.id, false);
+    });
+  });
   box.querySelectorAll(".call-card").forEach(card => {
     card.addEventListener("click", () => {
       const call = calls[Number(card.dataset.callIndex)];
-      if (!call) return;
+      if (!call || call.is_spam) return;
       const info = callClientInfo(call);
       if (info.client) openClientCard(info.client.client_id);
       else if (info.order) openDetail(info.order);
@@ -1165,16 +1196,91 @@ async function loadCallsForDate(dateStr) {
   summary.textContent = "Загрузка звонков…";
   box.innerHTML = `<div class="empty">Загрузка звонков…</div>`;
   try {
-    const q = dateStr ? `?date=${encodeURIComponent(dateStr)}` : "";
+    const params = new URLSearchParams();
+    if (dateStr) params.set("date", dateStr);
+    if (state.callsIncludeSpam) params.set("include_spam", "1");
+    const q = params.toString() ? `?${params}` : "";
     const r = await fetch(`/api/calls/today${q}`, {cache:"no-store", headers: authHeaders()});
     if (!r.ok) throw new Error("HTTP " + r.status);
     const data = await r.json();
     state.callsToday = data.calls || [];
+    state.spamCount = Number(data.spam_count || 0);
     renderCallsToday();
   } catch (e) {
     summary.textContent = "Ошибка загрузки";
     box.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
   }
+}
+
+/* Скрытые как спам: переключатель видит только редактор (решение 2А). */
+function renderCallsSpamToggle() {
+  const el = document.getElementById("callsSpamToggle");
+  if (!el) return;
+  const n = Number(state.spamCount || 0);
+  if (!state.canEdit || (!n && !state.callsIncludeSpam)) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML = `
+    <span class="spam-toggle-label">Показать скрытые${n ? ` (${n})` : ""}</span>
+    <button class="switch${state.callsIncludeSpam ? " on" : ""}" type="button" role="switch"
+            aria-checked="${state.callsIncludeSpam ? "true" : "false"}" aria-label="Показать скрытые"></button>`;
+  el.querySelector(".switch").addEventListener("click", () => {
+    state.callsIncludeSpam = !state.callsIncludeSpam;
+    loadCallsForDate(state.callsDate);
+  });
+}
+
+function openSpamDialog(call) {
+  state.spamPending = call.id;
+  if (spamDialog && typeof spamDialog.showModal === "function") spamDialog.showModal();
+}
+
+/* Пометить/вернуть звонок. Из базы не удаляем — только метка (решение 25.11.2026). */
+async function setCallSpam(callId, hidden) {
+  try {
+    const r = await fetch(`/api/calls/${callId}/spam`, {
+      method: "POST",
+      headers: Object.assign({"Content-Type": "application/json"}, authHeaders()),
+      body: JSON.stringify({hidden: !!hidden}),
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      const msg = data.detail === "call_linked_to_order" ? "Звонок привязан к заказу — скрыть нельзя"
+        : data.detail === "editing_forbidden" ? "Нет прав на это действие"
+        : "Не удалось изменить";
+      showCopyToast(msg);
+      return false;
+    }
+    await loadCallsForDate(state.callsDate);
+    if (hidden) showSpamToast(callId);
+    return true;
+  } catch (e) {
+    showCopyToast("Не удалось изменить");
+    return false;
+  }
+}
+
+let spamToastTimer = null;
+
+function showSpamToast(callId) {
+  let el = document.getElementById("spamToast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "spamToast";
+    el.className = "spam-toast";
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `<span>Скрыт как спам</span><button type="button" id="spamUndo">Вернуть</button>`;
+  el.classList.add("on");
+  el.querySelector("#spamUndo").addEventListener("click", () => {
+    el.classList.remove("on");
+    setCallSpam(callId, false);
+  });
+  clearTimeout(spamToastTimer);
+  spamToastTimer = setTimeout(() => el.classList.remove("on"), 10000);
 }
 
 function renderCallsScreen() {
@@ -1693,5 +1799,15 @@ document.getElementById("dateCancel").addEventListener("click", () => {
 });
 document.getElementById("dateSave").addEventListener("click", savePickedDate);
 dateDialog.addEventListener("click", e => { if (e.target === dateDialog) dateDialog.close(); });
+
+document.getElementById("closeSpamDialog").addEventListener("click", () => spamDialog.close());
+document.getElementById("spamCancel").addEventListener("click", () => spamDialog.close());
+document.getElementById("spamConfirm").addEventListener("click", async () => {
+  const callId = state.spamPending;
+  spamDialog.close();
+  state.spamPending = null;
+  if (callId != null) await setCallSpam(callId, true);
+});
+spamDialog.addEventListener("click", e => { if (e.target === spamDialog) spamDialog.close(); });
 
 init();
